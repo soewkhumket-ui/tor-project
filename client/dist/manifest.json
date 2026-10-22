@@ -1,0 +1,19 @@
+{
+  "name": "TOR Evidence & Handover Report System",
+  "short_name": "TOR Evidence",
+  "description": "ระบบบริหารหลักฐานการดำเนินงานและสร้างเอกสารส่งมอบงานตาม TOR มาตรฐานราชการ",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#102a43",
+  "theme_color": "#102a43",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["business", "productivity", "utilities"]
+}

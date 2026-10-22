@@ -1,0 +1,71 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: 'TH Sarabun New';
+  src: url('/fonts/Sarabun-Regular.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'TH Sarabun New';
+  src: url('/fonts/Sarabun-Bold.ttf') format('truetype');
+  font-weight: bold;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  font-family: 'TH Sarabun New', 'Sarabun', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: #f8fafc;
+  color: #1e293b;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Realistic A4 Visual Sheet for Report Preview */
+.a4-sheet {
+  width: 210mm;
+  min-height: 297mm;
+  padding: 15mm 15mm 15mm 20mm;
+  margin: 1.5rem auto;
+  background: #ffffff;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(0, 0, 0, 0.05);
+  box-sizing: border-box;
+  position: relative;
+  page-break-after: always;
+}
+
+@media screen and (max-width: 900px) {
+  .a4-sheet {
+    width: 100%;
+    min-height: auto;
+    padding: 1rem;
+    margin: 1rem 0;
+  }
+}
+
+/* Print Styles */
+@media print {
+  body {
+    background: transparent !important;
+    color: #000000 !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .a4-sheet {
+    box-shadow: none !important;
+    margin: 0 !important;
+    width: 100% !important;
+    padding: 10mm 15mm 15mm 20mm !important;
+  }
+}

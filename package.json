@@ -1,0 +1,16 @@
+{
+  "name": "tor-evidence-system-root",
+  "version": "1.0.0",
+  "description": "TOR Evidence & Handover Report System",
+  "scripts": {
+    "start": "npm --prefix server start",
+    "dev:server": "npm --prefix server run dev",
+    "dev:client": "npm --prefix client run dev",
+    "dev": "npx concurrently -n \"SERVER,CLIENT\" -c \"blue,green\" \"npm --prefix server run dev\" \"npm --prefix client run dev\"",
+    "build": "npm --prefix client run build",
+    "test:e2e": "cd server && npx tsx src/test_e2e.ts"
+  },
+  "keywords": ["tor", "evidence", "government", "report", "pdf"],
+  "author": "",
+  "license": "ISC"
+}

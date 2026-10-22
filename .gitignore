@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Environment variables (keep secrets out of Git)
+.env
+.env.local
+.env.*.local
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Temporary upload scratch files (keep actual project data & database!)
+server/storage/temp/*
+!server/storage/temp/.gitkeep
+
+# SQLite temporary lock files (main tor_evidence.sqlite IS tracked)
+*.sqlite-wal
+*.sqlite-shm
+
+# OS / Editor files
+.DS_Store
+Thumbs.db
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

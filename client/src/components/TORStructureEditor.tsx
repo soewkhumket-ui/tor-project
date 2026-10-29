@@ -226,6 +226,9 @@ export const TORStructureEditor: React.FC<TORStructureEditorProps> = ({ projectI
                     <h3 className="font-bold text-slate-900 text-base">
                       {item.title}
                     </h3>
+                    <span className="bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded text-xs font-semibold">
+                      {item.installment_title || `งวดที่ ${item.installment_number || 1}`}
+                    </span>
                     <span
                       className={`px-2 py-0.5 rounded text-xs font-semibold ${
                         item.evidence_required
@@ -436,6 +439,35 @@ export const TORStructureEditor: React.FC<TORStructureEditorProps> = ({ projectI
                 onChange={(e) => setEditingItem({ ...editingItem, requirement: e.target.value })}
                 className="w-full p-2 border border-slate-300 rounded-lg text-xs"
               />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">งวดงาน (Installment No.)</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={editingItem.installment_number || 1}
+                  onChange={(e) => {
+                    const num = parseInt(e.target.value) || 1;
+                    setEditingItem({
+                      ...editingItem,
+                      installment_number: num,
+                      installment_title: `งวดที่ ${num}`
+                    });
+                  }}
+                  className="w-full p-2 border border-slate-300 rounded-lg text-xs"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">ชื่องวดงาน (Installment Title)</label>
+                <input
+                  type="text"
+                  value={editingItem.installment_title || `งวดที่ ${editingItem.installment_number || 1}`}
+                  onChange={(e) => setEditingItem({ ...editingItem, installment_title: e.target.value })}
+                  className="w-full p-2 border border-slate-300 rounded-lg text-xs"
+                />
+              </div>
             </div>
 
             <div className="grid grid-cols-3 gap-3">

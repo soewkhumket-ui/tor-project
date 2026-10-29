@@ -123,7 +123,7 @@ evidenceRouter.get('/evidence/:id', (req: Request, res: Response) => {
 
 // POST Upload evidence photo (3-tier storage + quality checks)
 evidenceRouter.post('/evidence/:id/upload', upload.single('image'), async (req: Request, res: Response) => {
-  const { id: evidenceItemId } = req.params;
+  const evidenceItemId = String(req.params.id);
   const evItem = dbQuery.get('SELECT * FROM evidence_items WHERE id = ?', [evidenceItemId]);
   if (!evItem) return res.status(404).json({ error: 'Evidence item not found' });
 
@@ -132,7 +132,13 @@ evidenceRouter.post('/evidence/:id/upload', upload.single('image'), async (req: 
   try {
     const user = getCurrentUser();
     const tempPath = req.file.path;
-    const originalName = req.file.originalname;
+    let originalName = req.file.originalname;
+    try {
+      const candidate = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
+      if (!candidate.includes('\uFFFD')) {
+        originalName = candidate;
+      }
+    } catch {}
 
     // Process image through 3-tier pipeline
     const processed = await StorageService.processEvidenceImage(

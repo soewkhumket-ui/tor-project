@@ -29,11 +29,16 @@ projectsRouter.post('/extract-metadata', upload.single('project_file'), async (r
     let tempFileToken: string | null = null;
 
     if (req.file) {
-      originalName = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
-      // Fallback if originalname was already utf8
-      if (originalName.includes('')) {
-        originalName = req.file.originalname;
+      let decoded = req.body?.filename || req.file.originalname;
+      if (!req.body?.filename) {
+        try {
+          const candidate = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
+          if (!candidate.includes('\uFFFD')) {
+            decoded = candidate;
+          }
+        } catch {}
       }
+      originalName = decoded;
       mimeType = req.file.mimetype;
       tempFileToken = path.basename(req.file.path);
       extractedText = await AIService.extractTextFromFile(req.file.path, originalName);
@@ -286,8 +291,9 @@ projectsRouter.post('/', (req: Request, res: Response) => {
             `INSERT INTO tor_items (
               id, project_id, section_id, item_number, title, requirement,
               quantity, unit, dimensions, deliverable, evidence_required,
-              minimum_images, capture_instructions, capture_types, sort_order, status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              minimum_images, capture_instructions, capture_types, sort_order, status,
+              installment_number, installment_title
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               itemId,
               projectId,
@@ -304,7 +310,9 @@ projectsRouter.post('/', (req: Request, res: Response) => {
               JSON.stringify(item.capture_instructions || ['ถ่ายภาพรวม', 'ถ่ายรายละเอียด']),
               JSON.stringify(item.capture_types || ['overview', 'detail']),
               sortOrder++,
-              itemStatus
+              itemStatus,
+              item.installment_number || 1,
+              item.installment_title || `งวดที่ ${item.installment_number || 1}`
             ]
           );
 

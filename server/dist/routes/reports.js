@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import { v4 as uuidv4 } from 'uuid';
 import { dbQuery } from '../db/index.js';
 import { PDFGeneratorService } from '../services/pdf.js';
+import { STORAGE_ROOT } from '../services/storage.js';
 import { getCurrentUser } from './auth.js';
 export const reportsRouter = Router();
 // GET report template and configured sections for a project
@@ -91,8 +92,16 @@ reportsRouter.get('/projects/:id/report-preview', (req, res) => {
     const project = dbQuery.get('SELECT * FROM projects WHERE id = ?', [projectId]);
     if (!project)
         return res.status(404).json({ error: 'Project not found' });
+    const installmentFilter = req.query.installment ? parseInt(req.query.installment, 10) : undefined;
     const template = dbQuery.get('SELECT * FROM report_templates WHERE project_id = ? LIMIT 1', [projectId]);
-    const torItems = dbQuery.all('SELECT * FROM tor_items WHERE project_id = ? AND deleted_at IS NULL ORDER BY sort_order ASC', [projectId]);
+    let sql = 'SELECT * FROM tor_items WHERE project_id = ? AND deleted_at IS NULL';
+    const params = [projectId];
+    if (installmentFilter) {
+        sql += ' AND installment_number = ?';
+        params.push(installmentFilter);
+    }
+    sql += ' ORDER BY sort_order ASC';
+    const torItems = dbQuery.all(sql, params);
     const files = dbQuery.all(`
     SELECT f.*, t.id as tor_item_id
     FROM evidence_files f
@@ -119,8 +128,8 @@ reportsRouter.get('/projects/:id/report-preview', (req, res) => {
 });
 // POST Export official A4 PDF report
 reportsRouter.post('/projects/:id/export-pdf', async (req, res) => {
-    const { id: projectId } = req.params;
-    const { overrideReason, itemsPerPage } = req.body;
+    const projectId = String(req.params.id);
+    const { overrideReason, itemsPerPage, installment } = req.body;
     const project = dbQuery.get('SELECT * FROM projects WHERE id = ?', [projectId]);
     if (!project)
         return res.status(404).json({ error: 'Project not found' });
@@ -129,7 +138,15 @@ reportsRouter.post('/projects/:id/export-pdf', async (req, res) => {
         items_per_page: 2,
         header_text: 'เอกสารประกอบการส่งมอบงานตาม TOR'
     };
-    const torItems = dbQuery.all('SELECT * FROM tor_items WHERE project_id = ? AND deleted_at IS NULL ORDER BY sort_order ASC', [projectId]);
+    const installmentNum = installment ? parseInt(installment, 10) : undefined;
+    let sql = 'SELECT * FROM tor_items WHERE project_id = ? AND deleted_at IS NULL';
+    const params = [projectId];
+    if (installmentNum) {
+        sql += ' AND installment_number = ?';
+        params.push(installmentNum);
+    }
+    sql += ' ORDER BY sort_order ASC';
+    const torItems = dbQuery.all(sql, params);
     const files = dbQuery.all(`
     SELECT f.*, t.id as tor_item_id
     FROM evidence_files f
@@ -145,7 +162,7 @@ reportsRouter.post('/projects/:id/export-pdf', async (req, res) => {
         evidenceMap[f.tor_item_id].push(f);
     }
     // Ensure export directory exists
-    const exportDir = path.resolve(process.cwd(), 'storage/projects', projectId, 'exports');
+    const exportDir = path.join(STORAGE_ROOT, 'projects', projectId, 'exports');
     if (!fs.existsSync(exportDir)) {
         fs.mkdirSync(exportDir, { recursive: true });
     }
@@ -157,6 +174,7 @@ reportsRouter.post('/projects/:id/export-pdf', async (req, res) => {
             sections: [],
             torItems,
             evidenceMap,
+            selectedInstallment: installmentNum,
             itemsPerPage: itemsPerPage || template.items_per_page || 2,
             outputPath: outputPdfPath
         });
@@ -170,7 +188,7 @@ reportsRouter.post('/projects/:id/export-pdf', async (req, res) => {
             projectId,
             template.id || null,
             `รายงานส่งมอบงาน ${project.name}`,
-            path.relative(path.resolve(process.cwd(), 'storage'), outputPdfPath).replace(/\\/g, '/'),
+            path.relative(STORAGE_ROOT, outputPdfPath).replace(/\\/g, '/'),
             torItems.length,
             torItems.length,
             0,

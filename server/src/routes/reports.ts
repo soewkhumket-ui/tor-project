@@ -109,8 +109,17 @@ reportsRouter.get('/projects/:id/report-preview', (req: Request, res: Response) 
   const project = dbQuery.get('SELECT * FROM projects WHERE id = ?', [projectId]);
   if (!project) return res.status(404).json({ error: 'Project not found' });
 
+  const installmentFilter = req.query.installment ? parseInt(req.query.installment as string, 10) : undefined;
   const template = dbQuery.get('SELECT * FROM report_templates WHERE project_id = ? LIMIT 1', [projectId]);
-  const torItems = dbQuery.all('SELECT * FROM tor_items WHERE project_id = ? AND deleted_at IS NULL ORDER BY sort_order ASC', [projectId]);
+
+  let sql = 'SELECT * FROM tor_items WHERE project_id = ? AND deleted_at IS NULL';
+  const params: any[] = [projectId];
+  if (installmentFilter) {
+    sql += ' AND installment_number = ?';
+    params.push(installmentFilter);
+  }
+  sql += ' ORDER BY sort_order ASC';
+  const torItems = dbQuery.all(sql, params);
 
   const files = dbQuery.all(`
     SELECT f.*, t.id as tor_item_id
@@ -140,8 +149,8 @@ reportsRouter.get('/projects/:id/report-preview', (req: Request, res: Response) 
 
 // POST Export official A4 PDF report
 reportsRouter.post('/projects/:id/export-pdf', async (req: Request, res: Response) => {
-  const { id: projectId } = req.params;
-  const { overrideReason, itemsPerPage } = req.body;
+  const projectId = String(req.params.id);
+  const { overrideReason, itemsPerPage, installment } = req.body;
 
   const project = dbQuery.get('SELECT * FROM projects WHERE id = ?', [projectId]);
   if (!project) return res.status(404).json({ error: 'Project not found' });
@@ -152,10 +161,15 @@ reportsRouter.post('/projects/:id/export-pdf', async (req: Request, res: Respons
     header_text: 'เอกสารประกอบการส่งมอบงานตาม TOR'
   };
 
-  const torItems = dbQuery.all(
-    'SELECT * FROM tor_items WHERE project_id = ? AND deleted_at IS NULL ORDER BY sort_order ASC',
-    [projectId]
-  );
+  const installmentNum = installment ? parseInt(installment, 10) : undefined;
+  let sql = 'SELECT * FROM tor_items WHERE project_id = ? AND deleted_at IS NULL';
+  const params: any[] = [projectId];
+  if (installmentNum) {
+    sql += ' AND installment_number = ?';
+    params.push(installmentNum);
+  }
+  sql += ' ORDER BY sort_order ASC';
+  const torItems = dbQuery.all(sql, params);
 
   const files = dbQuery.all(`
     SELECT f.*, t.id as tor_item_id
@@ -187,6 +201,7 @@ reportsRouter.post('/projects/:id/export-pdf', async (req: Request, res: Respons
       sections: [],
       torItems,
       evidenceMap,
+      selectedInstallment: installmentNum,
       itemsPerPage: itemsPerPage || template.items_per_page || 2,
       outputPath: outputPdfPath
     });

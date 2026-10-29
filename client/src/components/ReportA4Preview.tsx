@@ -19,10 +19,14 @@ export const ReportA4Preview: React.FC<ReportA4PreviewProps> = ({ projectId }) =
   const [validationData, setValidationData] = useState<any>(null);
   const [overrideReason, setOverrideReason] = useState('');
   const [isExporting, setIsExporting] = useState(false);
+  const [selectedInstallment, setSelectedInstallment] = useState<number | 'all'>('all');
 
   const fetchPreviewData = async () => {
     try {
-      const res = await fetch(`/api/v1/projects/${projectId}/report-preview`);
+      const url = selectedInstallment === 'all'
+        ? `/api/v1/projects/${projectId}/report-preview`
+        : `/api/v1/projects/${projectId}/report-preview?installment=${selectedInstallment}`;
+      const res = await fetch(url);
       const data = await res.json();
       setProject(data.project);
       setTemplate(data.template);
@@ -40,7 +44,7 @@ export const ReportA4Preview: React.FC<ReportA4PreviewProps> = ({ projectId }) =
 
   useEffect(() => {
     fetchPreviewData();
-  }, [projectId]);
+  }, [projectId, selectedInstallment]);
 
   const handleValidateAndExport = async () => {
     try {
@@ -61,7 +65,8 @@ export const ReportA4Preview: React.FC<ReportA4PreviewProps> = ({ projectId }) =
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           overrideReason: overrideReason || undefined,
-          itemsPerPage
+          itemsPerPage,
+          installment: selectedInstallment === 'all' ? undefined : selectedInstallment
         })
       });
 
@@ -105,11 +110,48 @@ export const ReportA4Preview: React.FC<ReportA4PreviewProps> = ({ projectId }) =
     return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear() + 543}`;
   };
 
-  // Group evidence items into pages
-  const pagedItems: TorItem[][] = [];
-  for (let i = 0; i < torItems.length; i += itemsPerPage) {
-    pagedItems.push(torItems.slice(i, i + itemsPerPage));
+  // Group items into chunks with max 4 images per page (Grid 2 คอลัมน์ ไร้เส้นขอบ และตัดหน้าเพิ่มเติม)
+  interface PreviewChunk {
+    item: TorItem;
+    chunkIdx: number;
+    isAdditional: boolean;
+    displayTitle: string;
+    files: any[];
+    startIndex: number;
+    totalImages: number;
   }
+
+  const previewChunks: PreviewChunk[] = [];
+  for (const item of torItems) {
+    const files = evidenceMap[item.id] || [];
+    if (files.length <= 4) {
+      previewChunks.push({
+        item,
+        chunkIdx: 0,
+        isAdditional: false,
+        displayTitle: item.title,
+        files,
+        startIndex: 0,
+        totalImages: files.length
+      });
+    } else {
+      for (let start = 0; start < files.length; start += 4) {
+        const chunkIdx = Math.floor(start / 4);
+        const isAdditional = chunkIdx > 0;
+        previewChunks.push({
+          item,
+          chunkIdx,
+          isAdditional,
+          displayTitle: isAdditional ? `${item.title} (เพิ่มเติม)` : item.title,
+          files: files.slice(start, start + 4),
+          startIndex: start,
+          totalImages: files.length
+        });
+      }
+    }
+  }
+
+  const currentInstallment = selectedInstallment === 'all' ? 1 : selectedInstallment;
 
   return (
     <div className="space-y-6">
@@ -124,12 +166,28 @@ export const ReportA4Preview: React.FC<ReportA4PreviewProps> = ({ projectId }) =
               ตัวอย่างรายงานส่งมอบงาน A4 (WYSIWYG Preview)
             </h3>
             <p className="text-xs text-slate-500">
-              ฟอนต์ TH Sarabun New มาตรฐานราชการ • รวมทั้งสิ้น {pagedItems.length + 3} หน้า
+              ฟอนต์ TH Sarabun New มาตรฐานราชการ • รวมทั้งสิ้น {previewChunks.length + 4} หน้า
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
+          {/* Installment Filter */}
+          <div className="flex items-center gap-1.5 text-xs text-slate-700">
+            <span className="font-medium">งวดงาน:</span>
+            <select
+              value={selectedInstallment}
+              onChange={(e) => setSelectedInstallment(e.target.value === 'all' ? 'all' : parseInt(e.target.value))}
+              className="px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs font-semibold focus:ring-2 focus:ring-blue-500 bg-white"
+            >
+              <option value="all">ทุกงวดงาน (ทั้งหมด)</option>
+              <option value={1}>งวดที่ 1</option>
+              <option value={2}>งวดที่ 2</option>
+              <option value={3}>งวดที่ 3</option>
+              <option value={4}>งวดที่ 4</option>
+            </select>
+          </div>
+
           {/* Layout Selector (Requirement #33) */}
           <div className="flex items-center gap-1.5 text-xs text-slate-700">
             <span className="font-medium">รูปแบบ:</span>
@@ -227,74 +285,139 @@ export const ReportA4Preview: React.FC<ReportA4PreviewProps> = ({ projectId }) =
           </div>
         </div>
 
-        {/* Evidence Pages (2 Items / Page default) */}
-        {pagedItems.map((pageGroup, pageIdx) => (
-          <div key={`page-${pageIdx}`} className="a4-sheet font-sarabun text-slate-900 text-sm">
+        {/* Page 3: INSTALLMENT SUMMARY (หน้าสรุปเงื่อนไขงวดงานหน้าแรก) */}
+        <div className="a4-sheet font-sarabun text-slate-900 text-sm">
+          <div className="flex justify-between border-b border-blue-800 pb-1 text-xs text-slate-500 mb-4">
+            <span>{template?.header_text || 'เอกสารประกอบการส่งมอบงาน'}</span>
+            <span>สัญญาเลขที่ {project.contract_number || '-'}</span>
+          </div>
+
+          <div className="text-center mb-6">
+            <h2 className="text-2xl font-bold text-slate-900">สรุปขอบเขตงานและเงื่อนไขการส่งมอบงานประจำงวด</h2>
+            <p className="text-blue-700 text-base font-bold mt-1">งวดที่ {currentInstallment}</p>
+          </div>
+
+          <div className="border border-blue-200 rounded-lg p-4 bg-blue-50/50 mb-6 text-sm text-slate-700 leading-relaxed">
+            <div className="font-bold text-blue-900 mb-1">📋 เงื่อนไขการส่งมอบและเบิกจ่ายเงินตามสัญญา (ข้อกำหนด TOR):</div>
+            <p className="indent-6">
+              ผู้รับจ้างได้ดำเนินงานและจัดเก็บหลักฐานภาพถ่ายความสมบูรณ์ของงานตามขอบเขตข้อกำหนดของงาน (Terms of Reference : TOR) ครบถ้วนตามมาตรฐานสัญญา สำหรับการขออนุมัติเบิกจ่ายเงินงวดที่ {currentInstallment} โดยมีรายการขอบเขตงานและผลการดำเนินงานดังตารางสรุปต่อไปนี้
+            </p>
+          </div>
+
+          <table className="w-full border-collapse border border-slate-300 text-xs">
+            <thead>
+              <tr className="bg-blue-50 text-blue-950 font-bold">
+                <th className="border border-slate-300 p-2 text-center w-16">ข้อ TOR</th>
+                <th className="border border-slate-300 p-2 text-left">รายการงาน / ข้อกำหนด</th>
+                <th className="border border-slate-300 p-2 text-center w-24">จำนวน</th>
+                <th className="border border-slate-300 p-2 text-center w-28">หลักฐานภาพถ่าย</th>
+                <th className="border border-slate-300 p-2 text-center w-28">สถานะการตรวจรับ</th>
+              </tr>
+            </thead>
+            <tbody>
+              {torItems.map((item) => {
+                const files = evidenceMap[item.id] || [];
+                const minImgs = item.minimum_images || 4;
+                const isComplete = files.length >= minImgs;
+                return (
+                  <tr key={item.id} className="hover:bg-slate-50">
+                    <td className="border border-slate-300 p-2 text-center font-bold text-blue-800">{item.item_number}</td>
+                    <td className="border border-slate-300 p-2">
+                      <div className="font-bold text-slate-900">{item.title}</div>
+                      <div className="text-[11px] text-slate-500 truncate max-w-xs">{item.requirement}</div>
+                    </td>
+                    <td className="border border-slate-300 p-2 text-center">{item.quantity || 1} {item.unit || 'งาน'}</td>
+                    <td className="border border-slate-300 p-2 text-center font-semibold">{files.length} / {minImgs} ภาพ</td>
+                    <td className="border border-slate-300 p-2 text-center">
+                      <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${isComplete ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                        {isComplete ? '🟢 สมบูรณ์' : '🟡 ดำเนินการ'}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+
+          <div className="absolute bottom-4 left-6 right-6 flex justify-between border-t border-slate-200 pt-1 text-xs text-slate-500">
+            <span>{project.code}</span>
+            <span>หน้าที่ 3</span>
+          </div>
+        </div>
+
+        {/* Evidence Pages (Grid 2 คอลัมน์ ไร้เส้นขอบ + ตัดหน้าเพิ่มเติมอัตโนมัติ) */}
+        {previewChunks.map((chunk, chunkIdx) => (
+          <div key={`chunk-${chunkIdx}`} className="a4-sheet font-sarabun text-slate-900 text-sm">
             <div className="flex justify-between border-b border-blue-800 pb-1 text-xs text-slate-500 mb-3">
               <span>{project.code} - รายงานผลการดำเนินงานและหลักฐานภาพ</span>
               <span>{template?.header_text || ''}</span>
             </div>
 
-            <h3 className="text-lg font-bold text-blue-900 mb-3">
-              ส่วนที่ 5: รายงานผลการดำเนินงานและหลักฐานภาพ (หน้า {pageIdx + 1})
-            </h3>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-lg font-bold text-blue-900">
+                ส่วนที่ 5: รายงานผลการดำเนินงานและหลักฐานภาพ (หน้า {chunkIdx + 1})
+              </h3>
+              {chunk.isAdditional && (
+                <span className="bg-blue-100 text-blue-800 text-xs px-2.5 py-0.5 rounded font-bold">
+                  ภาพถ่ายเพิ่มเติม (ชุดที่ {chunk.chunkIdx + 1})
+                </span>
+              )}
+            </div>
 
-            <div className="space-y-4">
-              {pageGroup.map((item) => {
-                const files = evidenceMap[item.id] || [];
-                const displaySlots = [0, 1, 2, 3];
+            <div className="border border-slate-300 rounded-lg p-4 bg-white">
+              <div className="flex items-center justify-between border-b border-slate-200 pb-2 mb-3">
+                <span className="font-bold text-blue-800 text-base">
+                  หัวข้อ {chunk.item.item_number} : {chunk.displayTitle}
+                </span>
+                <span className="text-xs px-2 py-0.5 rounded font-bold bg-emerald-100 text-emerald-800">
+                  {chunk.totalImages >= (chunk.item.minimum_images || 4) ? '🟢 ครบถ้วน' : '🟡 กำลังดำเนินการ'} ({chunk.totalImages}/{chunk.item.minimum_images || 4} ภาพ)
+                </span>
+              </div>
 
-                return (
-                  <div key={item.id} className="border border-slate-300 rounded-lg p-3 bg-white">
-                    <div className="flex items-center justify-between border-b border-slate-200 pb-1.5 mb-2">
-                      <span className="font-bold text-blue-800 text-base">
-                        หัวข้อ {item.item_number} : {item.title}
-                      </span>
-                      <span className="text-xs px-2 py-0.5 rounded font-bold bg-emerald-100 text-emerald-800">
-                        {files.length >= (item.minimum_images || 4) ? '🟢 ครบถ้วน' : '🟡 กำลังดำเนินการ'} ({files.length}/{item.minimum_images || 4} ภาพ)
-                      </span>
-                    </div>
+              <div className="text-xs text-slate-700 bg-slate-50 p-2.5 rounded-lg mb-4 border border-slate-200/80">
+                <strong>ข้อกำหนด TOR:</strong> {chunk.item.requirement}
+                {chunk.item.dimensions && <span className="ml-2">| <strong>ขนาด:</strong> {chunk.item.dimensions}</span>}
+                {chunk.item.quantity && <span className="ml-2">| <strong>จำนวน:</strong> {chunk.item.quantity} {chunk.item.unit}</span>}
+              </div>
 
-                    <div className="text-xs text-slate-700 bg-slate-50 p-2 rounded mb-2 border border-slate-200/80">
-                      <strong>ข้อกำหนด TOR:</strong> {item.requirement}
-                      {item.dimensions && <span className="ml-2">| <strong>ขนาด:</strong> {item.dimensions}</span>}
-                    </div>
-
-                    {/* 4 Photos Grid */}
-                    <div className="grid grid-cols-2 gap-2">
-                      {displaySlots.map((slotIdx) => {
-                        const file = files[slotIdx];
-                        return (
-                          <div
-                            key={slotIdx}
-                            className="border border-slate-200 rounded overflow-hidden bg-slate-50 flex flex-col"
-                          >
-                            {file ? (
-                              <img
-                                src={`/storage/${file.preview_path || file.original_path}`}
-                                alt={`Evidence ${slotIdx + 1}`}
-                                className="w-full h-32 object-cover"
-                              />
-                            ) : (
-                              <div className="w-full h-32 flex items-center justify-center text-slate-400 text-xs bg-slate-100">
-                                [ รอภาพหลักฐานที่ {slotIdx + 1} ]
-                              </div>
-                            )}
-                            <div className="p-1 bg-slate-100 border-t border-slate-200 text-[11px] text-slate-600 truncate">
-                              ภาพที่ {slotIdx + 1}: {file ? file.caption || file.capture_type : '(ยังไม่แนบ)'}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
+              {/* Grid 2 คอลัมน์ ไร้เส้นขอบ (Border-Free 2-Column Grid) */}
+              <div className="grid grid-cols-2 gap-4">
+                {[0, 1, 2, 3].map((slotIdx) => {
+                  const file = chunk.files[slotIdx];
+                  const overallIdx = chunk.startIndex + slotIdx + 1;
+                  if (file) {
+                    return (
+                      <div key={slotIdx} className="flex flex-col items-center">
+                        <img
+                          src={`/storage/${file.preview_path || file.original_path}`}
+                          alt={`Evidence ${overallIdx}`}
+                          className="w-full h-44 object-cover rounded-lg bg-slate-100 shadow-sm"
+                        />
+                        <div className="pt-2 text-xs text-slate-700 text-center truncate w-full font-medium">
+                          ภาพที่ {overallIdx}: {file.caption || file.capture_type || 'ภาพหลักฐาน'}
+                        </div>
+                      </div>
+                    );
+                  } else if (chunk.chunkIdx === 0 && chunk.files.length < 4) {
+                    return (
+                      <div key={slotIdx} className="flex flex-col items-center">
+                        <div className="w-full h-44 flex items-center justify-center text-slate-400 text-xs bg-slate-50 border-2 border-dashed border-slate-200 rounded-lg">
+                          [ รอภาพหลักฐานที่ {overallIdx} ]
+                        </div>
+                        <div className="pt-2 text-xs text-slate-400 text-center font-medium">
+                          (ยังไม่ได้บันทึกภาพ)
+                        </div>
+                      </div>
+                    );
+                  }
+                  return null;
+                })}
+              </div>
             </div>
 
             <div className="absolute bottom-4 left-6 right-6 flex justify-between border-t border-slate-200 pt-1 text-xs text-slate-500">
               <span>{project.name}</span>
-              <span>หน้าที่ {pageIdx + 3}</span>
+              <span>หน้าที่ {chunkIdx + 4}</span>
             </div>
           </div>
         ))}

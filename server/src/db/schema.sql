@@ -105,6 +105,8 @@ CREATE TABLE IF NOT EXISTS tor_items (
     maximum_images INTEGER NOT NULL DEFAULT 0, -- 0 means unlimited
     capture_instructions TEXT, -- JSON array string
     capture_types TEXT, -- JSON array of recommended types: ["overview", "detail", "installation", "measurement"]
+    installment_number INTEGER NOT NULL DEFAULT 1,
+    installment_title TEXT DEFAULT 'งวดที่ 1',
     is_additional INTEGER NOT NULL DEFAULT 0, -- 1 = Additional Evidence (Not Original TOR)
     sort_order INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'DRAFT' CHECK(status IN ('DRAFT', 'APPROVED')),

@@ -58,9 +58,10 @@ async function runE2ETest() {
         dbQuery.run(`INSERT INTO tor_items (
         id, project_id, section_id, item_number, title, requirement,
         quantity, unit, dimensions, deliverable, evidence_required,
-        minimum_images, capture_instructions, capture_types, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT')`, [
-            `tor-${item.item_number.replace('.', '-')}`,
+        minimum_images, capture_instructions, capture_types,
+        installment_number, installment_title, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT')`, [
+            `tor-${testProjectId}-${item.item_number.replace('.', '-')}`,
             testProjectId,
             secId,
             item.item_number,
@@ -74,6 +75,8 @@ async function runE2ETest() {
             item.minimum_images || 4,
             JSON.stringify(item.capture_instructions),
             JSON.stringify(item.capture_types),
+            item.installment_number || 1,
+            item.installment_title || `งวดที่ ${item.installment_number || 1}`
         ]);
     }
     // Test Step 4: Human Review & TOR Structure Approval -> Checklist Generation

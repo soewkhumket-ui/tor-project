@@ -5,17 +5,17 @@ import fs from 'node:fs';
 import { v4 as uuidv4 } from 'uuid';
 import { dbQuery } from '../db/index.js';
 import { AIService } from '../services/ai.js';
-import { StorageService } from '../services/storage.js';
+import { StorageService, STORAGE_ROOT } from '../services/storage.js';
 import { getCurrentUser } from './auth.js';
 export const torRouter = Router();
 // Multer storage for temporary TOR file upload
 const upload = multer({
-    dest: path.resolve(process.cwd(), 'storage/temp'),
+    dest: path.join(STORAGE_ROOT, 'temp'),
     limits: { fileSize: 50 * 1024 * 1024 } // 50MB
 });
 // POST Upload TOR file and extract text / analyze
 torRouter.post('/projects/:id/tor-upload', upload.single('tor_file'), async (req, res) => {
-    const { id: projectId } = req.params;
+    const projectId = String(req.params.id);
     const project = dbQuery.get('SELECT * FROM projects WHERE id = ?', [projectId]);
     if (!project)
         return res.status(404).json({ error: 'Project not found' });
@@ -23,37 +23,61 @@ torRouter.post('/projects/:id/tor-upload', upload.single('tor_file'), async (req
         return res.status(400).json({ error: 'กรุณาเลือกไฟล์ TOR' });
     }
     try {
-        const originalName = req.file.originalname;
+        let originalName = req.file.originalname;
+        try {
+            const candidate = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
+            if (!candidate.includes('\uFFFD')) {
+                originalName = candidate;
+            }
+        }
+        catch { }
         const tempPath = req.file.path;
         // Save immutable original
         const saved = StorageService.saveTorDocument(projectId, tempPath, originalName);
-        // Read file text content or mock for binary
-        let extractedText = '';
-        const ext = path.extname(originalName).toLowerCase();
-        if (['.txt', '.md', '.json'].includes(ext)) {
-            extractedText = fs.readFileSync(tempPath, 'utf-8');
-        }
-        else {
-            // In production or tests, if text was sent in body or binary placeholder
-            extractedText = req.body.raw_text || `
-3. งานจัดสถานที่และอุปกรณ์
-3.1 จัดทำเวทีหลัก ขนาด 12.0 × 8.0 × 1.2 เมตร ปูพรมสีเทา พร้อมบันไดทางขึ้น
-3.2 ติดตั้งจอ LED Full HD ขนาดไม่น้อยกว่า 7.68 × 4.32 เมตร (P2.6)
-3.3 ระบบแสงเวที Moving Head ไม่น้อยกว่า 12 โคม พร้อมคอนโซลควบคุม
-3.4 ระบบเสียง Line Array พร้อมไมโครโฟนไร้สาย 8 ชุด
-3.5 จัดทำบูธนิทรรศการ จำนวน 20 คูหา ขนาดไม่น้อยกว่า 3 × 3 × 2.5 เมตร
-4. งานประชาสัมพันธ์
-4.1 จัดทำป้ายประชาสัมพันธ์บริเวณทางเข้าหลัก ขนาด 4.0 x 2.5 เมตร
-4.2 จัดทำเคาน์เตอร์ลงทะเบียน จำนวน 4 จุด
-`;
-        }
+        // Extract text from PDF, DOCX, TXT, MD, JSON
+        const extractedText = req.body.raw_text || (await AIService.extractTextFromFile(tempPath, originalName));
         const docId = uuidv4();
         dbQuery.run(`INSERT INTO tor_documents (id, project_id, filename, original_path, mime_type, file_size, raw_extracted_text)
        VALUES (?, ?, ?, ?, ?, ?, ?)`, [docId, projectId, originalName, saved.relativePath, req.file.mimetype, saved.fileSize, extractedText]);
         // AI Analysis
-        const analysis = await AIService.analyzeTorText(extractedText);
+        const analysis = await AIService.analyzeTorText(extractedText, originalName);
+        if (req.body.applyDirectly === 'true' || req.body.applyDirectly === true) {
+            let sortOrder = 1;
+            for (const sec of analysis.sections) {
+                const secId = uuidv4();
+                dbQuery.run(`INSERT INTO tor_sections (id, project_id, section_number, title, sort_order) VALUES (?, ?, ?, ?, ?)`, [secId, projectId, sec.section_number, sec.title, sortOrder++]);
+                for (const item of sec.items) {
+                    const itemId = uuidv4();
+                    dbQuery.run(`INSERT INTO tor_items (
+              id, project_id, section_id, item_number, title, requirement,
+              quantity, unit, dimensions, deliverable, evidence_required,
+              minimum_images, capture_instructions, capture_types, installment_number, installment_title, sort_order, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT')`, [
+                        itemId,
+                        projectId,
+                        secId,
+                        item.item_number,
+                        item.title,
+                        item.requirement,
+                        item.quantity || 1,
+                        item.unit || 'งาน',
+                        item.dimensions || null,
+                        item.deliverable || null,
+                        item.evidence_required ? 1 : 0,
+                        item.minimum_images || 4,
+                        JSON.stringify(item.capture_instructions || []),
+                        JSON.stringify(item.capture_types || ['overview', 'detail']),
+                        item.installment_number || 1,
+                        item.installment_title || `งวดที่ ${item.installment_number || 1}`,
+                        sortOrder++
+                    ]);
+                }
+            }
+        }
         // Clean up temporary file
-        fs.unlinkSync(tempPath);
+        if (fs.existsSync(tempPath)) {
+            fs.unlinkSync(tempPath);
+        }
         res.json({
             success: true,
             documentId: docId,
@@ -85,8 +109,8 @@ torRouter.post('/projects/:id/tor-analyze', async (req, res) => {
                     dbQuery.run(`INSERT INTO tor_items (
               id, project_id, section_id, item_number, title, requirement,
               quantity, unit, dimensions, deliverable, evidence_required,
-              minimum_images, capture_instructions, capture_types, sort_order, status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT')`, [
+              minimum_images, capture_instructions, capture_types, installment_number, installment_title, sort_order, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT')`, [
                         itemId,
                         projectId,
                         secId,
@@ -101,6 +125,8 @@ torRouter.post('/projects/:id/tor-analyze', async (req, res) => {
                         item.minimum_images || 4,
                         JSON.stringify(item.capture_instructions || []),
                         JSON.stringify(item.capture_types || ['overview', 'detail']),
+                        item.installment_number || 1,
+                        item.installment_title || `งวดที่ ${item.installment_number || 1}`,
                         sortOrder++
                     ]);
                 }
@@ -128,14 +154,14 @@ torRouter.get('/projects/:id/tor-structure', (req, res) => {
 // POST Create new manual TOR item
 torRouter.post('/projects/:id/tor-items', (req, res) => {
     const { id: projectId } = req.params;
-    const { section_id, item_number, title, requirement, quantity, unit, dimensions, deliverable, evidence_required, minimum_images, capture_instructions, capture_types } = req.body;
+    const { section_id, item_number, title, requirement, quantity, unit, dimensions, deliverable, evidence_required, minimum_images, capture_instructions, capture_types, installment_number, installment_title } = req.body;
     const itemId = uuidv4();
     const maxSort = dbQuery.get(`SELECT MAX(sort_order) as max FROM tor_items WHERE project_id = ?`, [projectId])?.max || 0;
     dbQuery.run(`INSERT INTO tor_items (
       id, project_id, section_id, item_number, title, requirement,
       quantity, unit, dimensions, deliverable, evidence_required,
-      minimum_images, capture_instructions, capture_types, sort_order, status
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT')`, [
+      minimum_images, capture_instructions, capture_types, installment_number, installment_title, sort_order, status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT')`, [
         itemId,
         projectId,
         section_id || null,
@@ -150,6 +176,8 @@ torRouter.post('/projects/:id/tor-items', (req, res) => {
         minimum_images || 4,
         JSON.stringify(capture_instructions || []),
         JSON.stringify(capture_types || ['overview', 'detail']),
+        installment_number || 1,
+        installment_title || `งวดที่ ${installment_number || 1}`,
         maxSort + 1
     ]);
     res.status(201).json({ success: true, itemId });
@@ -162,7 +190,8 @@ torRouter.patch('/tor-items/:id', (req, res) => {
         return res.status(404).json({ error: 'TOR Item not found' });
     const allowed = [
         'title', 'requirement', 'quantity', 'unit', 'dimensions',
-        'deliverable', 'evidence_required', 'minimum_images', 'sort_order'
+        'deliverable', 'evidence_required', 'minimum_images', 'sort_order',
+        'installment_number', 'installment_title'
     ];
     const updates = [];
     const params = [];

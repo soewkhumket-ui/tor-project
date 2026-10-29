@@ -127,30 +127,31 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectProject })
     const meta = data.projectMetadata || {};
     setFormData(prev => ({
       ...prev,
-      name: meta.name || prev.name,
-      code: meta.code || prev.code,
-      contract_number: meta.contract_number || prev.contract_number,
-      tor_number: meta.tor_number || prev.tor_number,
-      government_agency: meta.government_agency || prev.government_agency,
-      client: meta.client || meta.government_agency || prev.client,
-      contractor: meta.contractor || prev.contractor,
-      project_manager: meta.project_manager || prev.project_manager,
-      start_date: meta.start_date || prev.start_date,
-      end_date: meta.end_date || prev.end_date,
-      location: meta.location || prev.location,
-      description: meta.description || prev.description,
+      name: meta.name ?? '',
+      code: meta.code ?? '',
+      contract_number: meta.contract_number ?? '',
+      tor_number: meta.tor_number ?? '',
+      government_agency: meta.government_agency ?? '',
+      client: meta.client || meta.government_agency || '',
+      contractor: meta.contractor ?? '',
+      project_manager: meta.project_manager ?? '',
+      start_date: meta.start_date ?? '',
+      end_date: meta.end_date ?? '',
+      location: meta.location ?? '',
+      description: meta.description ?? '',
       export_policy: meta.export_policy || prev.export_policy
     }));
 
     const sections = data.sections || [];
     const rawItems = data.rawItems || [];
+    const cleanFilename = sourceLabel || data.filename || 'เอกสาร TOR';
     setExtractedSections(sections);
     setExtractedItemsCount(rawItems.length);
-    setUploadedFileName(data.filename || sourceLabel);
+    setUploadedFileName(cleanFilename);
     setTempFileToken(data.tempFileToken || null);
     setUploadedMimeType(data.mimeType || null);
     setAutoFillSuccessMsg(
-      `ดึงรายละเอียดโครงการอัตโนมัติสำเร็จจาก "${data.filename || sourceLabel}" และพบหัวข้อ TOR ${rawItems.length} รายการ (${sections.length} หมวดงาน)`
+      `ดึงรายละเอียดโครงการอัตโนมัติสำเร็จจาก "${cleanFilename}" และพบหัวข้อขอบเขตงาน ${rawItems.length} รายการ (${sections.length} หมวดงาน)`
     );
   };
 
@@ -163,6 +164,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectProject })
     try {
       const fd = new FormData();
       fd.append('project_file', file);
+      fd.append('filename', file.name);
 
       const res = await fetch('/api/v1/projects/extract-metadata', {
         method: 'POST',
@@ -687,7 +689,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectProject })
                   type="text"
                   value={formData.contract_number}
                   onChange={(e) => setFormData({ ...formData, contract_number: e.target.value })}
-                  placeholder="กท.45/2567"
+                  placeholder="ระบุเลขที่สัญญา (ถ้ามี)"
                   className="w-full p-2.5 text-xs border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -700,7 +702,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectProject })
                   type="text"
                   value={formData.tor_number}
                   onChange={(e) => setFormData({ ...formData, tor_number: e.target.value })}
-                  placeholder="TOR-08/2567"
+                  placeholder="ระบุเลขที่เอกสาร TOR (ถ้ามี)"
                   className="w-full p-2.5 text-xs border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -713,7 +715,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectProject })
                   type="text"
                   value={formData.government_agency}
                   onChange={(e) => setFormData({ ...formData, government_agency: e.target.value })}
-                  placeholder="สำนักงานส่งเสริมเทคโนโลยีและนวัตกรรมภาครัฐ"
+                  placeholder="ระบุหน่วยงานเจ้าของโครงการ"
                   className="w-full p-2.5 text-xs border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -726,7 +728,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectProject })
                   type="text"
                   value={formData.contractor}
                   onChange={(e) => setFormData({ ...formData, contractor: e.target.value })}
-                  placeholder="บริษัท สยาม อีเวนต์ จำกัด"
+                  placeholder="ระบุชื่อบริษัท/ผู้รับจ้างดำเนินงาน"
                   className="w-full p-2.5 text-xs border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -739,7 +741,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectProject })
                   type="text"
                   value={formData.project_manager}
                   onChange={(e) => setFormData({ ...formData, project_manager: e.target.value })}
-                  placeholder="นายกิตติศักดิ์ พัฒนเสรี"
+                  placeholder="ระบุชื่อผู้จัดการโครงการ/ผู้รับผิดชอบ"
                   className="w-full p-2.5 text-xs border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -770,7 +772,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectProject })
                   type="text"
                   value={formData.location}
                   onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                  placeholder="ศูนย์การประชุมแห่งชาติสิริกิติ์ กรุงเทพฯ"
+                  placeholder="ระบุสถานที่ดำเนินงาน"
                   className="w-full p-2.5 text-xs border border-slate-300 rounded-xl"
                 />
               </div>

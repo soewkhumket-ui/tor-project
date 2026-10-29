@@ -2,7 +2,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import sharp from 'sharp';
 import crypto from 'crypto';
-const STORAGE_ROOT = path.resolve(process.cwd(), 'storage');
+import { fileURLToPath } from 'node:url';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+export const STORAGE_ROOT = path.resolve(__dirname, '../../storage');
 export class StorageService {
     /**
      * Ensure directory exists

@@ -17,6 +17,8 @@ export interface ParsedTorItem {
   minimum_images: number;
   capture_instructions: string[];
   capture_types: string[];
+  installment_number?: number;
+  installment_title?: string;
 }
 
 export interface ExtractedProjectMetadata {
@@ -65,12 +67,31 @@ const THAI_MONTHS: Record<string, string> = {
 
 export class AIService {
   /**
-   * Normalize Thai PDF decomposed glyphs (e.g. Sara Am \u0e4d\u0e32 -> \u0e33)
-   * and repair PDF subset null-byte tone marks & table line wraps
+   * Normalize Thai PDF/Word decomposed glyphs, Private Use Area (PUA) characters,
+   * Sara Am (\u0e4d\u0e32 -> \u0e33), and table line wraps.
    */
   static normalizeThaiText(raw: string): string {
     return raw
       .normalize('NFC')
+      // Convert legacy Thai PUA glyphs (Windows/Mac Angsana/Cordia/Sarabun PUA) to standard Thai Unicode
+      .replace(/\uF700/g, '\u0E10')
+      .replace(/\uF701/g, '\u0E34')
+      .replace(/\uF702/g, '\u0E35')
+      .replace(/\uF703/g, '\u0E36')
+      .replace(/\uF704/g, '\u0E37')
+      .replace(/[\uF705\uF70A\uF713]/g, '\u0E48')
+      .replace(/[\uF706\uF70B\uF714]/g, '\u0E49')
+      .replace(/[\uF707\uF70C\uF715]/g, '\u0E4A')
+      .replace(/[\uF708\uF70D\uF716]/g, '\u0E4B')
+      .replace(/[\uF709\uF70E\uF717]/g, '\u0E4C')
+      .replace(/\uF70F/g, '\u0E0D')
+      .replace(/\uF710/g, '\u0E31')
+      .replace(/\uF711/g, '\u0E4D')
+      .replace(/\uF712/g, '\u0E47')
+      .replace(/\uF718/g, '\u0E38')
+      .replace(/\uF719/g, '\u0E39')
+      .replace(/\uF71A/g, '\u0E3A')
+      // Normalize Sara Am
       .replace(/\u0e4d\s*\u0e32/g, '\u0e33')
       .replace(/\u0e32\s*\u0e4d/g, '\u0e33')
       // Repair common Thai PDF subset null-char replacements
@@ -101,7 +122,9 @@ export class AIService {
       .replace(/([A-Z]{2,5}-\d{4}-)\s*\n\s*([A-Z0-9\-]+)/g, '$1$2')
       .replace(/ภาค\s*\n\s*รัฐ(\s*\(องค์การมหาชน\))?/g, 'ภาครัฐ$1')
       .replace(/โซลูชั่น\s*\n\s*จำกัด/g, 'โซลูชั่น จำกัด')
-      .replace(/(โครงการ[^\n]{10,80})\n((?:นานาชาติ|ประจำปี|เพื่อ|ของ|ณ\s)[^\n]{4,80})/g, '$1$2');
+      // Remove standalone page number markers like "-2-", "- 3 -", "หน้า 2"
+      .replace(/^\s*-\s*\d+\s*-\s*$/gm, '')
+      .replace(/^\s*หน้า\s*\d+(?:\s*\/\s*\d+)?\s*$/gm, '');
   }
 
   /**
@@ -135,31 +158,8 @@ export class AIService {
       console.warn(`⚠️ Text extraction warning for ${originalFilename}:`, err);
     }
 
-    // Fallback when scanned image or binary without selectable text
     const baseTitle = path.basename(originalFilename, ext).replace(/[-_]+/g, ' ').trim();
-    return this.normalizeThaiText(`
-ชื่อโครงการ: โครงการ${baseTitle || 'จัดจ้างดำเนินงานและติดตั้งระบบตามขอบเขตงาน (TOR)'}
-รหัสโครงการ: PRJ-${new Date().getFullYear() + 543}-${Math.floor(100 + Math.random() * 900)}
-สัญญาเลขที่: กท.${Math.floor(10 + Math.random() * 89)}/${new Date().getFullYear() + 543}
-เลขที่ TOR: TOR-${Math.floor(10 + Math.random() * 89)}/${new Date().getFullYear() + 543}
-หน่วยงานเจ้าของโครงการ: สำนักงานส่งเสริมเทคโนโลยีและนวัตกรรมภาครัฐ
-ผู้รับจ้างดำเนินงาน: บริษัท สยาม อีเวนต์ แอนด์ โซลูชั่น จำกัด
-ผู้จัดการโครงการ: นายกิตติศักดิ์ พัฒนเสรี
-วันเริ่มสัญญา: 2026-10-01
-วันสิ้นสุดสัญญา: 2026-10-31
-สถานที่ดำเนินงาน: ศูนย์การประชุมแห่งชาติสิริกิติ์ กรุงเทพมหานคร
-
-1. งานเตรียมการและสำรวจพื้นที่
-1.1 สำรวจพื้นที่ติดตั้งและจัดทำผังบริเวณ (Layout Plan) จำนวน 1 งาน
-1.2 ติดตั้งระบบไฟฟ้าหลักและตู้ควบคุมความปลอดภัย จำนวน 1 ระบบ
-2. งานโครงสร้างและติดตั้งอุปกรณ์หลัก
-2.1 จัดทำโครงสร้างเวทีและฉากหลัง ขนาดไม่น้อยกว่า 12.0 × 6.0 เมตร จำนวน 1 ชุด
-2.2 ติดตั้งจอแสดงผล LED Full Color ขนาดไม่น้อยกว่า 6.0 × 3.5 เมตร จำนวน 1 ระบบ
-2.3 ติดตั้งระบบแสงและเสียงมาตรฐาน จำนวน 1 ระบบ
-3. งานจุดลงทะเบียนและประชาสัมพันธ์
-3.1 จัดทำจุดลงทะเบียนพร้อมอุปกรณ์สแกน QR Code จำนวน 4 จุด
-3.2 ติดตั้งป้ายประชาสัมพันธ์และป้ายบอกทางบริเวณงาน จำนวน 10 จุด
-`);
+    return this.normalizeThaiText(`ชื่อโครงการ: ${baseTitle || 'โครงการตามขอบเขตงาน (TOR)'}`);
   }
 
   /**
@@ -206,29 +206,41 @@ export class AIService {
   }
 
   /**
-   * Extract complete Project Metadata from raw TOR text
+   * Extract complete Project Metadata from raw TOR text without injecting fake mock entities
    */
   static extractProjectMetadata(rawText: string, originalFilename?: string): ExtractedProjectMetadata {
     const text = this.normalizeThaiText(rawText);
     const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-    const buddhistYear = new Date().getFullYear() + 543;
+    const currentBuddhistYear = new Date().getFullYear() + 543;
     const randSuffix = Math.floor(10 + Math.random() * 89);
 
-    // 1. Project Name
+    // 1. Project Name — Combine multi-line Thai TOR titles (e.g. "จ้างเหมา..." + "โครงการ...")
     let name = '';
-    const explicitNameMatch = text.match(/(?:ชื่อโครงการ|(?<![รหัส|เจ้าของ|ของ])โครงการ\s*[:：])\s*([^\n]+)/i);
+    const explicitNameMatch = text.match(/(?:ชื่อโครงการ|(?<![รหัส|เจ้าของ|ของ|ดำเนิน|จัดการ])โครงการ\s*[:：])\s*([^\n]+)/i);
     if (explicitNameMatch && explicitNameMatch[1].trim().length > 4 && !/^[A-Z0-9\-]+$/.test(explicitNameMatch[1].trim())) {
       name = explicitNameMatch[1].replace(/^[":：\-]+/, '').trim();
     }
+
     if (!name) {
-      const projectLine = lines.find(l =>
-        /^(โครงการ|งานจ้าง|ประกวดราคาจ้าง|จ้างเหมา)/.test(l) &&
-        !l.startsWith('โครงการ:') &&
-        l.length > 12 &&
-        l.length < 200
-      );
-      if (projectLine) name = projectLine.replace(/^ชื่อโครงการ\s*[:：]?\s*/, '').trim();
+      // Inspect header lines before the first numbered chapter "1."
+      const firstChapterIdx = lines.findIndex(l => /^1[\.\s]+(ความเป็นมา|หลักการ|วัตถุประสงค์|งาน|ขอบเขต)/.test(l));
+      const headerSlice = firstChapterIdx > 0 ? lines.slice(0, Math.min(firstChapterIdx, 10)) : lines.slice(0, 8);
+      const titleParts: string[] = [];
+
+      for (const hl of headerSlice) {
+        if (/^(ขอบเขตงาน|ขอบเขตของงาน|ข้อกำหนด|ร่างขอบเขต|Terms of Reference|TOR\b)/i.test(hl) && hl.length < 45) {
+          continue; // Skip generic document type header line
+        }
+        if (/^(โครงการ|งานจ้าง|ประกวดราคาจ้าง|จ้างเหมา|กิจกรรม)/.test(hl) && !hl.includes(':') && hl.length > 8 && hl.length < 180) {
+          titleParts.push(hl.trim());
+        }
+      }
+
+      if (titleParts.length > 0) {
+        name = titleParts.join(' ');
+      }
     }
+
     if (!name) {
       const subjectMatch = text.match(/(?:เรื่อง\s*[:：]\s*(?:ขออนุมัติ|ข้อกำหนด|ร่างขอบเขตงาน)?)\s*([^\n]+)/i);
       if (subjectMatch && subjectMatch[1].trim().length > 4) {
@@ -238,11 +250,15 @@ export class AIService {
     if (!name && originalFilename) {
       const ext = path.extname(originalFilename);
       const base = path.basename(originalFilename, ext).replace(/[-_]+/g, ' ').trim();
-      name = base.startsWith('โครงการ') ? base : `โครงการ${base}`;
+      name = base;
     }
     if (!name) {
-      name = `โครงการจัดจ้างและบริหารงานตามข้อกำหนด TOR ประจำปี ${buddhistYear}`;
+      name = `โครงการตามข้อกำหนดขอบเขตงาน (TOR) ประจำปี ${currentBuddhistYear}`;
     }
+
+    // Detect project year from name or text (e.g. 2569, 2570)
+    const yearMatch = name.match(/25[6-8]\d/) || text.match(/ประจำปี\s*(?:งบประมาณ\s*)?(?:พ\.ศ\.\s*)?(25[6-8]\d)/);
+    const projectYear = yearMatch ? (yearMatch[1] || yearMatch[0]) : String(currentBuddhistYear);
 
     // 2. Project Code
     let code = '';
@@ -250,47 +266,57 @@ export class AIService {
     if (codeMatch) {
       code = codeMatch[1].trim().replace(/-$/, '').toUpperCase();
     } else {
-      const typePrefix = /นิทรรศการ|อีเวนต์|ประชุม|เวที|ไฟ|เสียง/.test(text)
+      const typePrefix = /นิทรรศการ|อีเวนต์|ประชุม|เวที|Open\s*House/i.test(text)
         ? 'EVT'
         : /ก่อสร้าง|ปรับปรุง|อาคาร|ซ่อมแซม/.test(text)
         ? 'CON'
         : /ประชาสัมพันธ์|สื่อ|ป้าย/.test(text)
         ? 'PR'
-        : 'GOV';
-      code = `PRJ-${buddhistYear}-${typePrefix}-${randSuffix}`;
+        : 'TOR';
+      code = `PRJ-${projectYear}-${typePrefix}-${randSuffix}`;
     }
 
     // 3. Contract Number
     let contract_number = '';
-    const contractMatch = text.match(/(?:สัญญาเลขที่|สัญญาจ้างเลขที่|เลขที่สัญญา)\s*[:：]?\s*([^\s\n\|]{3,30})/i);
+    const contractMatch = text.match(/(?:สัญญาเลขที่|สัญญาจ้างเลขที่|เลขที่สัญญา)\s*[:：]?\s*([^\s\n\|]{2,35})/i);
     if (contractMatch && contractMatch[1] !== '-') {
       contract_number = contractMatch[1].trim();
-    } else {
-      contract_number = `กท.${randSuffix}/${buddhistYear}`;
     }
 
     // 4. TOR Number
     let tor_number = '';
-    const torMatch = text.match(/(?:เลขที่\s*TOR|เอกสาร\s*TOR\s*เลขที่|TOR\s*เลขที่|รหัส\s*TOR)\s*[:：]?\s*([^\s\n\|]{3,35})/i);
+    const torMatch = text.match(/(?:เลขที่\s*TOR|เอกสาร\s*TOR\s*เลขที่|TOR\s*เลขที่|รหัส\s*TOR)\s*[:：]?\s*([^\s\n\|]{2,35})/i);
     if (torMatch && torMatch[1] !== '-') {
       tor_number = torMatch[1].trim();
-    } else {
-      tor_number = `TOR-${ String(randSuffix).padStart(2, '0') }/${buddhistYear}`;
     }
 
     // 5. Government Agency / Client
     let government_agency = '';
-    const agencyLabelMatch = text.match(/(?:หน่วยงานเจ้าของโครงการ|หน่วยงานผู้ว่าจ้าง|ส่วนราชการเจ้าของโครงการ|ส่วนราชการ|หน่วยงาน)\s*[:：]\s*([^\n]+)/i);
-    if (agencyLabelMatch) {
-      government_agency = agencyLabelMatch[1].trim();
+    const explicitAgencyMatch = text.match(/(?:หน่วยงานเจ้าของโครงการ|หน่วยงานผู้ว่าจ้าง|ส่วนราชการเจ้าของโครงการ)\s*[:：]\s*([^\n]+)/i);
+    if (explicitAgencyMatch) {
+      government_agency = explicitAgencyMatch[1].trim();
     } else {
-      const agencyEntityMatch = text.match(/((?:สำนักงาน|กรม|กระทรวง|เทศบาล|องค์การบริหารส่วน|การท่องเที่ยวแห่ง|มหาวิทยาลัย|โรงพยาบาล|การไฟฟ้า|การประปา)[^\n,;\|]{4,70})/);
-      if (agencyEntityMatch) {
-        government_agency = agencyEntityMatch[1].trim();
+      // Find main institution (e.g. มหาวิทยาลัยแม่โจ้)
+      const mainInstMatch = text.match(/((?:มหาวิทยาลัย|กระทรวง|กรม|เทศบาล|องค์การบริหารส่วน|การท่องเที่ยวแห่ง|โรงพยาบาล|การไฟฟ้า|การประปา)[^\s\n,;\|()""“”]{3,50})/);
+      const mainInst = mainInstMatch ? mainInstMatch[1].trim() : '';
+
+      // Find sub-department / responsible office (e.g. สำนักบริหารและพัฒนาวิชาการ or หน่วยงานที่รับผิดชอบ: ...)
+      const respUnitMatch = text.match(/(?:หน่วยงานที่รับผิดชอบ|หน่วยงานผู้รับผิดชอบ)\s*[:：]\s*([^\n]+)/i);
+      const deptActionMatch = text.match(/((?:สำนัก|คณะ|วิทยาลัย|กอง|ฝ่าย)[^\s\n,;\|()]{4,45})(?=\s*(?:กำหนดการเบิกจ่าย|พิจารณา|มีความประสงค์))/);
+
+      const subUnit = respUnitMatch
+        ? respUnitMatch[1].trim()
+        : deptActionMatch
+        ? deptActionMatch[1].trim()
+        : '';
+
+      if (subUnit && mainInst && !subUnit.includes(mainInst)) {
+        government_agency = `${subUnit} ${mainInst}`;
+      } else if (mainInst) {
+        government_agency = mainInst;
+      } else if (subUnit) {
+        government_agency = subUnit;
       }
-    }
-    if (!government_agency) {
-      government_agency = 'สำนักงานส่งเสริมเทคโนโลยีและนวัตกรรมภาครัฐ (องค์การมหาชน)';
     }
 
     let client = '';
@@ -301,28 +327,18 @@ export class AIService {
       client = government_agency;
     }
 
-    // 6. Contractor
+    // 6. Contractor — Only populate when explicitly stated in document (never inject fake company)
     let contractor = '';
     const contractorLabelMatch = text.match(/(?:ผู้รับจ้างดำเนินงาน|ผู้รับจ้าง|บริษัทผู้รับจ้าง|รับจ้างโดย)\s*[:：]\s*([^\n]+)/i);
     if (contractorLabelMatch) {
       contractor = contractorLabelMatch[1].trim();
-    } else {
-      const companyMatch = text.match(/((?:บริษัท|ห้างหุ้นส่วนจำกัด|หจก\.|บจก\.)\s*[^\n,;\|]{4,70}(?:จำกัด(?:\s*\(มหาชน\))?)?)/);
-      if (companyMatch) {
-        contractor = companyMatch[1].trim();
-      }
-    }
-    if (!contractor) {
-      contractor = 'บริษัท สยาม นวัตกรรม แอนด์ อีเวนต์ โซลูชั่น จำกัด';
     }
 
-    // 7. Project Manager
+    // 7. Project Manager — Only populate when explicitly stated in document (never inject fake person)
     let project_manager = '';
-    const pmMatch = text.match(/(?:ผู้จัดการโครงการ|ผู้ควบคุมงาน|ผู้รับผิดชอบโครงการ|ผู้ประสานงาน)\s*[:：]?\s*((?:นาย|นางสาว|นาง|ดร\.|ผศ\.|รศ\.|ศ\.|ว่าที่\s*ร\.ต\.|คุณ)[^\n\(\|,]{3,50})/i);
+    const pmMatch = text.match(/(?:ผู้จัดการโครงการ|ผู้ควบคุมงาน|ผู้รับผิดชอบโครงการ|ผู้ประสานงานโครงการ)\s*[:：]\s*((?:นาย|นางสาว|นาง|ดร\.|ผศ\.|รศ\.|ศ\.|ว่าที่\s*ร\.ต\.|คุณ)[^\n\(\|,]{3,50})/i);
     if (pmMatch) {
       project_manager = pmMatch[1].trim();
-    } else {
-      project_manager = 'นายกิตติศักดิ์ พัฒนเสรี';
     }
 
     // 8. Start Date & End Date
@@ -339,9 +355,8 @@ export class AIService {
       end_date = this.parseThaiOrIsoDate(endLabelMatch[1]) || '';
     }
 
-    // Range pattern e.g. ระยะเวลาสัญญา: 1 ตุลาคม 2569 ถึง 15 ตุลาคม 2569
     if (!start_date || !end_date) {
-      const rangeMatch = text.match(/(\d{1,2}\s+[^\s\d]+\s+\d{4}|\d{4}-\d{2}-\d{2})\s*(?:ถึง|\-|จนถึง)\s*(\d{1,2}\s+[^\s\d]+\s+\d{4}|\d{4}-\d{2}-\d{2})/);
+      const rangeMatch = text.match(/(?:ระยะเวลาสัญญา|ระยะเวลาดำเนินงาน)\s*[:：]?\s*(\d{1,2}\s+[^\s\d]+\s+\d{4}|\d{4}-\d{2}-\d{2})\s*(?:ถึง|\-|จนถึง)\s*(\d{1,2}\s+[^\s\d]+\s+\d{4}|\d{4}-\d{2}-\d{2})/);
       if (rangeMatch) {
         if (!start_date) start_date = this.parseThaiOrIsoDate(rangeMatch[1]) || '';
         if (!end_date) end_date = this.parseThaiOrIsoDate(rangeMatch[2]) || '';
@@ -353,36 +368,55 @@ export class AIService {
       start_date = today.toISOString().split('T')[0];
     }
     if (!end_date) {
-      // Check if duration in days is mentioned e.g. ภายใน 30 วัน / ระยะเวลา 45 วัน
-      const durationMatch = text.match(/(?:ภายใน|ระยะเวลา(?:ดำเนินการ)?)\s*(\d{1,3})\s*วัน/);
-      const daysToAdd = durationMatch ? parseInt(durationMatch[1], 10) : 30;
+      // Prioritize contract-level duration ("ระยะเวลาดำเนินการรวมจำนวน 30 วัน", "ภายใน 30 วัน นับถัดจากวันลงนาม")
+      const contractDurationMatch =
+        text.match(/(?:ระยะเวลาดำเนินการ(?:รวม)?(?:จำนวน)?|ระยะเวลาส่งมอบ(?:งาน)?|กำหนดเวลาดำเนินการ|อายุสัญญา)\s*(?:รวม)?(?:จำนวน)?\s*(?:ภายใน\s*)?(\d{1,3})\s*วัน/) ||
+        text.match(/ภายใน\s*(\d{1,3})\s*วัน\s*นับ(?:ถัด)?จากวันลงนาม/);
+
+      const daysToAdd = contractDurationMatch ? parseInt(contractDurationMatch[1], 10) : 30;
       const startObj = new Date(start_date);
       startObj.setDate(startObj.getDate() + daysToAdd);
       end_date = startObj.toISOString().split('T')[0];
     }
 
-    // 9. Location
+    // 9. Location — Extract real venue + institution (never fallback to fake Bangkok venue)
     let location = '';
     const locLabelMatch = text.match(/(?:สถานที่ดำเนินงาน|สถานที่ดำเนินการ|สถานที่จัดงาน|สถานที่ติดตั้ง|สถานที่ส่งมอบ)\s*[:：]\s*([^\n]+)/i);
     if (locLabelMatch) {
       location = locLabelMatch[1].trim();
     } else {
-      const atMatch = text.match(/(?:ณ\s+)(ศูนย์การประชุม[^\n,]+|อาคาร[^\n,]+|ห้องประชุม[^\n,]+|โรงแรม[^\n,]+|ศาลากลาง[^\n,]+|สำนักงาน[^\n,]+)/);
-      if (atMatch) {
-        location = atMatch[1].trim();
+      // Match primary venue after "ณ" or "ของ" (e.g., "ณ ศูนย์กีฬาทศมินทรบพิตร", "ของศูนย์กีฬาทศมินทรบพิตร")
+      const primaryVenueMatch =
+        text.match(/(?:ณ\s+)(ศูนย์กีฬา[^\s\n,()]+|ศูนย์การประชุม[^\n,()]+|ศูนย์แสดงสินค้า[^\n,()]+|หอประชุม[^\s\n,()]+|อาคาร[^\s\n,()]+|โรงแรม[^\n,()]+|ศาลากลาง[^\n,()]+|สำนักงาน[^\n,()]+)/) ||
+        text.match(/(ศูนย์กีฬา[^\s\n,()]+|ศูนย์การประชุม[^\n,()]+|หอประชุม[^\s\n,()]+)/);
+
+      const mainUniOrPlaceMatch = text.match(/((?:มหาวิทยาลัย|โรงเรียน|วิทยาลัย|เทศบาล)[^\s\n,;\|()""“”]{3,45})/);
+      const contactLocMatch = text.match(/สถานที่ติดต่อ\s*[:：]\s*([^\n]+)/i);
+
+      if (primaryVenueMatch) {
+        const venue = primaryVenueMatch[1].trim();
+        const inst = mainUniOrPlaceMatch ? mainUniOrPlaceMatch[1].trim() : '';
+        location = inst && !venue.includes(inst) ? `${venue} ${inst}` : venue;
+      } else if (contactLocMatch) {
+        location = contactLocMatch[1].trim();
+      } else if (mainUniOrPlaceMatch) {
+        location = mainUniOrPlaceMatch[1].trim();
       }
-    }
-    if (!location) {
-      location = 'ศูนย์การประชุมแห่งชาติสิริกิติ์ กรุงเทพมหานคร';
     }
 
     // 10. Description
     let description = '';
-    const descMatch = text.match(/(?:วัตถุประสงค์|ขอบเขตของงาน|รายละเอียดโครงการโดยสรุป|คำอธิบายโครงการ)\s*[:：]?\s*([^\n]{15,250})/i);
-    if (descMatch) {
-      description = descMatch[1].trim();
+    const conceptMatch = text.match(/ภายใต้แนวคิด\s*[“"']?([^”"'\n]+)[”"']?/);
+    const budgetMatch = text.match(/วงเงิน(?:งบประมาณ|ในการจัดหา)?\s*([0-9,]+\s*บาท[^\n]*)/);
+    const descParts: string[] = [];
+    if (conceptMatch) descParts.push(`แนวคิด: "${conceptMatch[1].trim()}"`);
+    if (budgetMatch) descParts.push(`วงเงินงบประมาณ ${budgetMatch[1].trim()}`);
+
+    if (descParts.length > 0) {
+      description = `${name} (${descParts.join(' | ')})`;
     } else {
-      description = `ดำเนินงานและส่งมอบหลักฐานตามขอบเขตข้อกำหนด TOR โครงการ ${name}`;
+      const explicitDesc = text.match(/(?:รายละเอียดโครงการโดยสรุป|คำอธิบายโครงการ)\s*[:：]\s*([^\n]{10,250})/i);
+      description = explicitDesc ? explicitDesc[1].trim() : `ดำเนินงานและส่งมอบหลักฐานตามขอบเขตงาน (TOR) โครงการ ${name}`;
     }
 
     return {
@@ -413,10 +447,12 @@ export class AIService {
     if (apiKey) {
       try {
         const geminiResult = await this.analyzeWithGemini(cleanedText, apiKey, heuristicMetadata);
-        return {
-          ...geminiResult,
-          extractedText: cleanedText
-        };
+        if (geminiResult.rawItems && geminiResult.rawItems.length > 0) {
+          return {
+            ...geminiResult,
+            extractedText: cleanedText
+          };
+        }
       } catch (err) {
         console.warn('⚠️ Gemini API call failed or timed out, falling back to built-in Thai TOR semantic parser:', err);
       }
@@ -437,10 +473,10 @@ export class AIService {
     apiKey: string,
     fallbackMetadata: ExtractedProjectMetadata
   ): Promise<TorAnalysisResult> {
-    const systemPrompt = `You are an expert government procurement and TOR (Terms of Reference) analyst specializing in Thai government contracts, events, construction, and IT installations.
+    const systemPrompt = `You are an expert Thai government procurement and TOR (Terms of Reference) analyst.
 Analyze the provided TOR document and extract:
-1. Full project metadata (name, code, contract_number, tor_number, government_agency, contractor, project_manager, start_date in YYYY-MM-DD, end_date in YYYY-MM-DD, location, description). Convert any Thai Buddhist Era years (e.g. 2567, 2568, 2569) to Gregorian years (e.g. 2024, 2025, 2026) for start_date and end_date.
-2. A structured hierarchy of sections and items. For every item, determine whether photographic evidence is required (default minimum_images to 4).
+1. Full project metadata (name, code, contract_number, tor_number, government_agency, contractor, project_manager, start_date in YYYY-MM-DD, end_date in YYYY-MM-DD, location, description). Do NOT fabricate contractor or project_manager if not stated in the TOR.
+2. ONLY the actual Scope of Work (ขอบเขตการดำเนินงาน / ขอบเขตของงาน) sections and deliverable items. NEVER include Objectives (วัตถุประสงค์), Bidder Qualifications (คุณสมบัติผู้ยื่นข้อเสนอ), or Bidding Instructions (ข้อปฏิบัติในการยื่นข้อเสนอราคา) as work items.
 
 Respond ONLY with a valid JSON object matching this schema:
 {
@@ -459,12 +495,12 @@ Respond ONLY with a valid JSON object matching this schema:
   },
   "sections": [
     {
-      "section_number": "1",
-      "title": "งานเตรียมการและพื้นที่",
+      "section_number": "6.1",
+      "title": "ชื่อหมวดงาน",
       "items": [
         {
-          "item_number": "1.1",
-          "title": "สำรวจพื้นที่",
+          "item_number": "6.1.1",
+          "title": "ชื่อรายการงาน",
           "requirement": "รายละเอียดข้อกำหนด...",
           "quantity": 1,
           "unit": "งาน",
@@ -472,17 +508,20 @@ Respond ONLY with a valid JSON object matching this schema:
           "deliverable": "สิ่งที่ต้องส่งมอบ...",
           "evidence_required": true,
           "minimum_images": 4,
-          "capture_instructions": ["ถ่ายภาพรวม", "ถ่ายรายละเอียด", "ถ่ายวัดขนาด"],
-          "capture_types": ["overview", "detail", "measurement"]
+          "capture_instructions": ["ถ่ายภาพรวม", "ถ่ายรายละเอียด"],
+          "capture_types": ["overview", "detail"],
+          "installment_number": 1,
+          "installment_title": "งวดที่ 1"
         }
       ]
     }
   ]
 }`;
 
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(6000),
       body: JSON.stringify({
         contents: [
           { role: 'user', parts: [{ text: `${systemPrompt}\n\n--- TOR DOCUMENT TEXT ---\n${rawText}` }] }
@@ -494,41 +533,42 @@ Respond ONLY with a valid JSON object matching this schema:
     });
 
     if (!response.ok) {
-      throw new Error(`Gemini API returned status ${response.status}: ${await response.text()}`);
+      throw new Error(`Gemini API HTTP ${response.status}`);
     }
 
-    const data = (await response.json()) as any;
-    const textOutput = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!textOutput) throw new Error('Empty response from Gemini');
+    const data: any = await response.json();
+    const jsonText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!jsonText) {
+      throw new Error('Empty response from Gemini');
+    }
 
-    const parsed = JSON.parse(textOutput);
+    const parsed = JSON.parse(jsonText);
     const rawItems: ParsedTorItem[] = [];
-    if (parsed.sections && Array.isArray(parsed.sections)) {
-      for (const sec of parsed.sections) {
-        if (sec.items && Array.isArray(sec.items)) {
-          for (const item of sec.items) {
-            item.section_number = sec.section_number;
-            item.section_title = sec.title;
-            rawItems.push(item);
-          }
-        }
+
+    for (const sec of parsed.sections || []) {
+      for (const item of sec.items || []) {
+        item.section_number = sec.section_number;
+        item.section_title = sec.title;
+        item.installment_number = item.installment_number || 1;
+        item.installment_title = item.installment_title || `งวดที่ ${item.installment_number}`;
+        rawItems.push(item);
       }
     }
 
-    const pm = parsed.projectMetadata || {};
+    const gm = parsed.projectMetadata || {};
     const mergedMetadata: ExtractedProjectMetadata = {
-      name: pm.name || parsed.projectName || fallbackMetadata.name,
-      code: pm.code || fallbackMetadata.code,
-      contract_number: pm.contract_number || parsed.contractNumber || fallbackMetadata.contract_number,
-      tor_number: pm.tor_number || fallbackMetadata.tor_number,
-      government_agency: pm.government_agency || fallbackMetadata.government_agency,
-      client: pm.client || pm.government_agency || fallbackMetadata.client,
-      contractor: pm.contractor || fallbackMetadata.contractor,
-      project_manager: pm.project_manager || fallbackMetadata.project_manager,
-      start_date: this.parseThaiOrIsoDate(pm.start_date) || fallbackMetadata.start_date,
-      end_date: this.parseThaiOrIsoDate(pm.end_date) || fallbackMetadata.end_date,
-      location: pm.location || fallbackMetadata.location,
-      description: pm.description || fallbackMetadata.description,
+      name: gm.name || fallbackMetadata.name,
+      code: gm.code || fallbackMetadata.code,
+      contract_number: gm.contract_number || fallbackMetadata.contract_number,
+      tor_number: gm.tor_number || fallbackMetadata.tor_number,
+      government_agency: gm.government_agency || fallbackMetadata.government_agency,
+      client: gm.client || gm.government_agency || fallbackMetadata.client,
+      contractor: gm.contractor || fallbackMetadata.contractor,
+      project_manager: gm.project_manager || fallbackMetadata.project_manager,
+      start_date: this.parseThaiOrIsoDate(gm.start_date) || fallbackMetadata.start_date,
+      end_date: this.parseThaiOrIsoDate(gm.end_date) || fallbackMetadata.end_date,
+      location: gm.location || fallbackMetadata.location,
+      description: gm.description || fallbackMetadata.description,
       export_policy: 'warning'
     };
 
@@ -542,186 +582,433 @@ Respond ONLY with a valid JSON object matching this schema:
   }
 
   /**
+   * Extract clean human-readable item title from a Thai TOR clause
+   */
+  private static extractCleanItemTitle(fullContent: string): string {
+    const cleaned = fullContent.replace(/\s+/g, ' ').trim();
+    if (cleaned.includes(':')) {
+      const colonIdx = cleaned.indexOf(':');
+      if (colonIdx > 3 && colonIdx < 65) {
+        return cleaned.slice(0, colonIdx).trim();
+      }
+    }
+
+    // Remove overly long parenthetical explanations for the short title
+    let concise = cleaned.replace(/\([^)]{18,}\)/g, '').replace(/\s+/g, ' ').trim();
+
+    // Cut at secondary descriptive clauses if after 15 chars
+    const cutMarkers = [
+      ' โดยมีโครงสร้าง',
+      ' โดยมีรายละเอียด',
+      ' โดยระบุ',
+      ' โดยผู้ว่าจ้าง',
+      ' เพื่อสื่อสาร',
+      ' เพื่อประสานงานและซักซ้อม',
+      ' ทั้งนี้',
+      ' ติดบริเวณ',
+      ' ติดตั้งบริเวณ',
+      ' ณ ใต้ถุน',
+      ' ให้เพียงพอกับ',
+      ' และโครงสร้างคูหาต้องประกอบด้วย'
+    ];
+    for (const marker of cutMarkers) {
+      const idx = concise.indexOf(marker);
+      if (idx >= 15) {
+        concise = concise.slice(0, idx).trim();
+        break;
+      }
+    }
+
+    if (concise.length > 75) {
+      const spaceIdx = concise.lastIndexOf(' ', 75);
+      concise = (spaceIdx > 35 ? concise.slice(0, spaceIdx) : concise.slice(0, 72)).trim() + '...';
+    }
+    return concise || cleaned.slice(0, 60);
+  }
+
+  /**
+   * Build a ParsedTorItem with accurate quantity, unit, dimensions, and capture instructions
+   */
+  private static buildParsedTorItem(
+    secNum: string,
+    secTitle: string,
+    itemNum: string,
+    rawContent: string,
+    installmentMap: Map<string, { num: number; title: string }>,
+    defaultInstallmentTitle: string
+  ): ParsedTorItem {
+    const fullContent = rawContent
+      .replace(/\s*\(?(?:🟢|🟡|🔴|🔵|🟣)?\s*(?:ครบถ้วนสมบูรณ์|กำลังดำเนินงาน|รอตรวจสอบ)?\s*\(\d+\/\d+\s*ภาพ\)\)?/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const title = this.extractCleanItemTitle(fullContent);
+    const requirement = fullContent;
+
+    // Extract Quantities and Units: require explicit quantity indicators ("จำนวน", "ไม่น้อยกว่า", "อย่างน้อย")
+    // or trailing unit pattern so item numbers/voltages/channels are never confused with deliverable quantities.
+    let quantity = 1;
+    let unit = 'งาน';
+
+    const unitPattern = 'ตัว\\/คูหา|ชุด\\/คูหา|คูหา|ชุด|ระบบ|จุด|ตัว|เครื่อง|จอ|โคม|แผง|ผืน|งาน|ตารางเมตร|ตร\\.ม\\.|รายการ|แห่ง|ป้าย|คน|คัน|หลัง|ตู้|ใบ|เล่ม';
+    const explicitQtyRegex = new RegExp(
+      `(?:จำนวน(?:ไม่น้อยกว่า|อย่างน้อย|รวม|ทั้งสิ้น)?\\s*(?:อย่างละ\\s*)?|ไม่น้อยกว่า\\s*|อย่างน้อย\\s*)(\\d+(?:\\.\\d+)?)\\s*(${unitPattern})`,
+      'g'
+    );
+
+    const matches = Array.from(fullContent.matchAll(explicitQtyRegex));
+    if (matches.length > 0) {
+      // Prefer "จำนวน..." matches or the last deliverable quantity (e.g. "จำนวน 1 จุด ... จำนวนไม่น้อยกว่า 24 จุด" -> 24 จุด)
+      const chosen = matches[matches.length - 1];
+      quantity = parseFloat(chosen[1]);
+      unit = chosen[2];
+
+      // Handle "อย่างละ 1 ชุด" when 2 types of signs/items are mentioned
+      if (/จำนวนอย่างละ\s*1\s*ชุด/.test(fullContent) && /และจุด/.test(fullContent)) {
+        quantity = 2;
+      }
+    } else {
+      const fallbackQty = fullContent.match(new RegExp(`(?<!\\d\\.|\\d)\\b(\\d+(?:\\.\\d+)?)\\s*(${unitPattern})(?!\\s*เสียบ)`));
+      if (fallbackQty) {
+        quantity = parseFloat(fallbackQty[1]);
+        unit = fallbackQty[2];
+      }
+    }
+
+    // Extract Dimensions (e.g. ขนาด 1.2 x 2.4 เมตร, 3 x 3 x 2.5 เมตรต่อคูหา, กว้างไม่น้อยกว่า 3 เมตร และความยาวไม่น้อยกว่า 7 เมตร)
+    let dimensions: string | undefined;
+    const stageDimMatch = fullContent.match(/ความกว้าง[^\n]{0,25}?ไม่น้อยกว่า\s*(\d+(?:\.\d+)?)\s*เมตร\s*และ(?:ขนาด)?ความยาว[^\n]{0,25}?ไม่น้อยกว่า\s*(\d+(?:\.\d+)?)\s*เมตร/);
+    if (stageDimMatch) {
+      dimensions = `${stageDimMatch[1]} x ${stageDimMatch[2]} เมตร`;
+    } else {
+      const dimMatch = fullContent.match(/(?:ขนาด(?:ไม่น้อยกว่า)?\s*)([0-9\.\s×xX\*]+(?:เมตรต่อคูหา|เมตร|ม\.|เซนติเมตร|ซม\.|ตารางเมตร|ตร\.ม\.))/);
+      if (dimMatch) {
+        dimensions = dimMatch[1].trim();
+      }
+    }
+
+    const isReportOnly = /รายงานสรุปผลการดำเนินงาน/.test(fullContent);
+    const evidenceRequired = true;
+
+    const captureInstructions: string[] = [];
+    const captureTypes: string[] = ['overview', 'detail'];
+
+    if (dimensions) {
+      captureInstructions.push(`ถ่ายภาพยืนยันขนาด/มิติ (${dimensions}) ตามที่ระบุใน TOR`);
+      captureTypes.push('measurement');
+    }
+    if (quantity > 1) {
+      captureInstructions.push(`ถ่ายภาพให้เห็นจำนวนส่งมอบครบ (${quantity} ${unit})`);
+    }
+    captureInstructions.push('ถ่ายภาพรวมพื้นที่ติดตั้ง/การดำเนินงานด้านหน้า');
+    captureInstructions.push('ถ่ายรายละเอียดวัสดุ อุปกรณ์ และความเรียบร้อยของงาน');
+    if (!isReportOnly) {
+      captureInstructions.push('ถ่ายภาพยืนยันการใช้งานจริงระหว่างดำเนินกิจกรรม');
+      captureTypes.push('finished_work');
+    }
+
+    const instInfo =
+      installmentMap.get(itemNum) ||
+      installmentMap.get(secNum) || { num: 1, title: defaultInstallmentTitle };
+
+    return {
+      section_number: secNum,
+      section_title: secTitle,
+      item_number: itemNum,
+      title,
+      requirement,
+      quantity,
+      unit,
+      dimensions,
+      deliverable: `${title} (${quantity} ${unit})`,
+      evidence_required: evidenceRequired,
+      minimum_images: 4,
+      capture_instructions: captureInstructions.slice(0, 4),
+      capture_types: Array.from(new Set(captureTypes)),
+      installment_number: instInfo.num,
+      installment_title: instInfo.title
+    };
+  }
+
+  /**
    * Built-in intelligent Thai TOR semantic extractor
-   * Parses sections (1., 2., 3.), sub-items (1.1, 1.2, 2.1...), quantities, units, and instructions.
+   * Accurately separates administrative chapters (1-5, 7-13) from Scope of Work (Chapter 6)
+   * and supports both 3-level (6. -> 6.2 -> 6.2.1) and 2-level (1. -> 1.1) TOR hierarchies.
    */
   static parseWithSemanticThaiParser(
     text: string,
     projectMetadata?: ExtractedProjectMetadata
   ): TorAnalysisResult {
-    const metadata = projectMetadata || this.extractProjectMetadata(text);
-    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+    const cleanedText = this.normalizeThaiText(text);
+    const metadata = projectMetadata || this.extractProjectMetadata(cleanedText);
+    const lines = cleanedText
+      .split(/\r?\n/)
+      .map(l => l.trim())
+      .filter(l => l.length > 0 && !/^-\s*\d+\s*-$/.test(l));
+
+    // Detect Installment rules from text
+    const installmentMap = new Map<string, { num: number; title: string }>();
+    let defaultInstallmentTitle = 'งวดที่ 1';
+    if (/ร้อยละ\s*100\s*ของวงเงิน|จ่ายให้เมื่อผู้รับจ้างได้ดำเนินการทั้งหมดแล้วเสร็จ/.test(cleanedText)) {
+      defaultInstallmentTitle = 'งวดที่ 1 (ส่งมอบงาน 100%)';
+    }
+
+    const instMatches = cleanedText.matchAll(/งวดที่\s*(\d+)[^\n]*(?:ข้อ\s*([\d\.,\s\-ถึงและ]+))?/g);
+    for (const m of instMatches) {
+      const instNum = parseInt(m[1], 10);
+      const instTitle = `งวดที่ ${instNum}`;
+      if (m[2]) {
+        const refs = m[2].match(/\d+(?:\.\d+)*/g) || [];
+        for (const r of refs) {
+          installmentMap.set(r, { num: instNum, title: instTitle });
+        }
+      }
+    }
+
     const sections: { section_number: string; title: string; items: ParsedTorItem[] }[] = [];
     const rawItems: ParsedTorItem[] = [];
 
-    let currentSection: { section_number: string; title: string; items: ParsedTorItem[] } | null = null;
-    let currentItem: ParsedTorItem | null = null;
+    // Administrative chapter titles that must NEVER be extracted as deliverable work items
+    const adminChapterRegex = /^(?:หมวดที่|ส่วนที่|ข้อที่)?\s*(\d+)[\.\s]+(ความเป็นมา|หลักการและเหตุผล|วัตถุประสงค์|คุณสมบัติของผู้ยื่นข้อเสนอ|คุณสมบัติผู้ยื่นข้อเสนอ|คุณสมบัติของผู้เสนอราคา|กลุ่มเป้าหมาย|ข้อปฏิบัติในการยื่นข้อเสนอ|หลักเกณฑ์และสิทธิ์|ระยะเวลาดำเนินการ|ระยะเวลาส่งมอบ|วงเงินในการจัดหา|งบประมาณ|ค่าจ้างและการจ่ายเงิน|การเบิกจ่ายเงิน|อัตราค่าปรับ|ค่าปรับ|เกณฑ์การพิจารณา|หน่วยงานผู้รับผิดชอบ|การรับประกัน|การทำสัญญา)/;
+    const scopeChapterRegex = /^(?:หมวดที่|ส่วนที่|ข้อที่)?\s*(\d+)[\.\s]+(ขอบเขตการดำเนินงาน|ขอบเขตของงาน|ขอบเขตงาน|รายละเอียดขอบเขตงาน|รายการดำเนินงาน|งานที่ต้องดำเนินการ)/;
 
-    // Regex patterns for Thai document numbering
-    const sectionRegex = /^(?:หมวดที่|ส่วนที่|ข้อที่)?\s*(\d+)[\.\s]+(งาน|ข้อกำหนด|หมวด|ส่วนที่|การ|ระบบ|รายการ)(.+)$/;
-    const itemRegex = /^(?:หัวข้อ)?\s*(\d+\.\d+)[\.\s:：]+(.+)$/;
+    // Check if document uses 3-level numbering (e.g. 6.2.1, 6.3.1)
+    const threeLevelRegex = /^(?:หัวข้อ)?\s*(\d+\.\d+\.\d+)(?:[\s:：]+|(?=[ก-ฮA-Za-z]))(.+)$/;
+    const twoLevelRegex = /^(?:หัวข้อ)?\s*(\d+\.\d+)(?!\.\d)(?:[\s:：]+|(?=[ก-ฮA-Za-z]))(.+)$/;
+    const oneLevelRegex = /^(?:หมวดที่|ส่วนที่|ข้อที่)?\s*(\d+)(?!\.\d)[\.\s]+(.+)$/;
 
-    for (const line of lines) {
-      // Skip metadata header lines
-      if (/^(ชื่อโครงการ|รหัสโครงการ|สัญญาเลขที่|เลขที่\s*TOR|หน่วยงานเจ้าของโครงการ|ผู้ว่าจ้าง|ผู้รับจ้าง|ผู้จัดการโครงการ|วันเริ่มสัญญา|วันสิ้นสุดสัญญา|สถานที่ดำเนินงาน)\s*[:：]/.test(line)) {
-        continue;
+    const hasThreeLevelItems = lines.some(l => threeLevelRegex.test(l));
+    const hasExplicitScopeChapter = lines.some(l => scopeChapterRegex.test(l));
+
+    if (hasThreeLevelItems || hasExplicitScopeChapter) {
+      // Find which chapter number is the Scope of Work (e.g. "6")
+      let scopeChapterNum: string | null = null;
+      for (const l of lines) {
+        const sm = l.match(scopeChapterRegex);
+        if (sm) {
+          scopeChapterNum = sm[1];
+          break;
+        }
+      }
+      if (!scopeChapterNum && hasThreeLevelItems) {
+        const firstThree = lines.find(l => threeLevelRegex.test(l));
+        if (firstThree) {
+          scopeChapterNum = firstThree.match(threeLevelRegex)![1].split('.')[0];
+        }
       }
 
-      // Check for Section Header (e.g. "3. งานระบบภาพ แสง และเสียง")
-      const secMatch = line.match(sectionRegex);
-      if (secMatch && !line.includes('×') && !line.includes('เมตร')) {
-        const secNum = secMatch[1];
-        const secTitle = `${secMatch[2]}${secMatch[3]}`.trim();
-        currentSection = {
-          section_number: secNum,
-          title: secTitle,
-          items: []
-        };
-        sections.push(currentSection);
-        currentItem = null;
-        continue;
-      }
+      let currentSection: { section_number: string; title: string; items: ParsedTorItem[]; descLines: string[] } | null = null;
+      let currentItem: ParsedTorItem | null = null;
+      let inScopeChapter = false;
 
-      // Check for Sub Item Header (e.g. "3.2 ติดตั้งจอ LED ขนาด 7.68 x 4.32 เมตร")
-      const itemMatch = line.match(itemRegex);
-      if (
-        itemMatch &&
-        !/\.00$/.test(itemMatch[1]) &&
-        !/^[×xX\*]|^(เมตร|ม\.|ซม\.|ตร\.ม\.)/.test(itemMatch[2].trim())
-      ) {
-        const itemNum = itemMatch[1];
-        const fullContent = itemMatch[2].replace(/\s*\(?(?:🟢|🟡|🔴|🔵|🟣)?\s*(?:ครบถ้วนสมบูรณ์|กำลังดำเนินงาน|รอตรวจสอบ)?\s*\(\d+\/\d+\s*ภาพ\)\)?/g, '').trim();
+      const flushSectionIfEmpty = (sec: { section_number: string; title: string; items: ParsedTorItem[]; descLines: string[] } | null) => {
+        if (!sec) return;
+        if (sec.items.length === 0 && sec.descLines.length > 0) {
+          const combinedDesc = sec.descLines.join(' ').trim();
+          const singleItem = this.buildParsedTorItem(
+            sec.section_number,
+            sec.title,
+            sec.section_number,
+            `${sec.title}: ${combinedDesc}`,
+            installmentMap,
+            defaultInstallmentTitle
+          );
+          singleItem.title = sec.title;
+          singleItem.requirement = combinedDesc;
+          sec.items.push(singleItem);
+          rawItems.push(singleItem);
+        }
+      };
 
-        // Extract Title and Requirement
-        let title = fullContent;
-        let requirement = fullContent;
-        if (fullContent.includes(':')) {
-          const parts = fullContent.split(':');
-          title = parts[0].trim();
-          requirement = parts.slice(1).join(':').trim() || title;
-        } else if (fullContent.length > 45 && fullContent.includes(' ')) {
-          title = fullContent.split(/[,\s]/).slice(0, 2).join(' ');
+      for (const line of lines) {
+        // Check 1-level chapter header (e.g. "6. ขอบเขตการดำเนินงาน..." or "7. ระยะเวลาดำเนินการ")
+        const oneMatch = line.match(oneLevelRegex);
+        if (oneMatch && !threeLevelRegex.test(line) && !twoLevelRegex.test(line)) {
+          const chapNum = oneMatch[1];
+          if (chapNum === scopeChapterNum || scopeChapterRegex.test(line)) {
+            inScopeChapter = true;
+            continue;
+          } else if (inScopeChapter && parseInt(chapNum, 10) > parseInt(scopeChapterNum || '0', 10)) {
+            // Reached Chapter 7+ after Scope Chapter 6 -> stop scope extraction
+            flushSectionIfEmpty(currentSection);
+            currentSection = null;
+            currentItem = null;
+            inScopeChapter = false;
+            break;
+          }
         }
 
-        // Extract Quantities and Units (e.g. จำนวน 20 คูหา, 1 ระบบ, 4 ตัว)
-        let quantity = 1;
-        let unit = 'งาน';
-        const qtyMatch = fullContent.match(/(?:จำนวน\s*)?(\d+(?:\.\d+)?)\s*(คูหา|ชุด|ระบบ|จุด|ตัว|เครื่อง|จอ|โคม|แผง|ผืน|งาน|ตารางเมตร|ตร\.ม\.|รายการ|แห่ง|ป้าย)/);
-        if (qtyMatch) {
-          quantity = parseFloat(qtyMatch[1]);
-          unit = qtyMatch[2];
+        // Check 3-level item (e.g. 6.2.1 จัดทำแผนผังรูปแบบงาน...)
+        const threeMatch = line.match(threeLevelRegex);
+        if (threeMatch) {
+          const itemNum = threeMatch[1];
+          const topChap = itemNum.split('.')[0];
+          if (scopeChapterNum && topChap !== scopeChapterNum) continue;
+
+          inScopeChapter = true;
+          const parentSecNum = itemNum.split('.').slice(0, 2).join('.');
+          if (!currentSection || currentSection.section_number !== parentSecNum) {
+            flushSectionIfEmpty(currentSection);
+            currentSection = {
+              section_number: parentSecNum,
+              title: `หมวดงาน ${parentSecNum}`,
+              items: [],
+              descLines: []
+            };
+            sections.push(currentSection);
+          }
+
+          currentItem = this.buildParsedTorItem(
+            currentSection.section_number,
+            currentSection.title,
+            itemNum,
+            threeMatch[2],
+            installmentMap,
+            defaultInstallmentTitle
+          );
+          currentSection.items.push(currentItem);
+          rawItems.push(currentItem);
+          continue;
         }
 
-        // Extract Dimensions (e.g. ขนาด 7.68 × 5.67 เมตร or 3 × 3 × 2.5 ม.)
-        let dimensions: string | undefined;
-        const dimMatch = fullContent.match(/(?:ขนาด(?:ไม่น้อยกว่า)?\s*)?([0-9\.\s×xX\*]+(?:เมตร|ม\.|เซนติเมตร|ซม\.|ตารางเมตร|ตร\.ม\.))/);
-        if (dimMatch) {
-          dimensions = dimMatch[1].trim();
-        }
+        // Check 2-level header (e.g. "6.1 การออกแบบแนวคิดการจัดงาน", "6.2 การจัดเวทีเปิดงาน...")
+        const twoMatch = line.match(twoLevelRegex);
+        if (twoMatch) {
+          const secNum = twoMatch[1];
+          const topChap = secNum.split('.')[0];
+          if (scopeChapterNum && topChap !== scopeChapterNum) {
+            continue; // Ignore 2.1, 3.1, 3.2, 5.1 outside Scope Chapter 6!
+          }
+          if (/\.00$/.test(secNum)) continue;
 
-        // Determine if evidence is required
-        const isNonPhysical = /จัดทำรายงานสรุป|ประชุมหารือ|ประสานงาน|วางแผนงาน/.test(fullContent);
-        const evidenceRequired = !isNonPhysical;
-
-        // Generate tailored capture instructions
-        const captureInstructions: string[] = [];
-        const captureTypes: string[] = ['overview', 'detail'];
-
-        if (dimensions) {
-          captureInstructions.push('ถ่ายภาพที่สามารถยืนยันขนาดและสัดส่วนตามที่ระบุใน TOR');
-          captureTypes.push('measurement');
-        }
-        if (quantity > 1) {
-          captureInstructions.push(`ถ่ายภาพรวมให้เห็นจำนวนครบทั้ง ${quantity} ${unit}`);
-        }
-        captureInstructions.push('ถ่ายภาพรวมพื้นที่การติดตั้ง/ส่งมอบงานด้านหน้าตรง');
-        captureInstructions.push('ถ่ายรายละเอียดวัสดุ โครงสร้าง และความประณีตเรียบร้อย');
-        captureInstructions.push('ถ่ายภาพยืนยันการเปิดทดสอบการใช้งานจริง');
-        captureTypes.push('finished_work');
-
-        currentItem = {
-          section_number: currentSection ? currentSection.section_number : itemNum.split('.')[0],
-          section_title: currentSection ? currentSection.title : 'หมวดงานหลัก',
-          item_number: itemNum,
-          title: title.length > 60 ? title.substring(0, 57) + '...' : title,
-          requirement,
-          quantity,
-          unit,
-          dimensions,
-          deliverable: `งาน${title} แล้วเสร็จตามมาตรฐาน TOR`,
-          evidence_required: evidenceRequired,
-          minimum_images: evidenceRequired ? 4 : 0,
-          capture_instructions: captureInstructions.slice(0, 4),
-          capture_types: Array.from(new Set(captureTypes))
-        };
-
-        if (!currentSection) {
+          inScopeChapter = true;
+          flushSectionIfEmpty(currentSection);
+          const secTitle = twoMatch[2].trim();
           currentSection = {
-            section_number: itemNum.split('.')[0],
-            title: `หมวดที่ ${itemNum.split('.')[0]}`,
+            section_number: secNum,
+            title: secTitle,
+            items: [],
+            descLines: []
+          };
+          sections.push(currentSection);
+          currentItem = null;
+          continue;
+        }
+
+        // Handle continuation lines or section-level notes inside Scope Chapter
+        if (inScopeChapter && currentSection) {
+          if (/^ทั้งนี้\s*(?:การขนย้าย|ให้ผู้รับจ้าง)/.test(line)) {
+            // Section-level installation/removal schedule note: attach to section items' deliverable info
+            const dateNoteMatch = line.match(/ติดตั้งในวันที่\s*([^\n]+?)\s*และ(?:ต้อง)?(?:รื้อถอน|ส่งมอบคืน)[^\n]*?(?:ในวันที่|ภายในวันที่)\s*([^\n]+)/);
+            const scheduleNote = dateNoteMatch
+              ? ` (กำหนดติดตั้ง ${dateNoteMatch[1].trim()} / รื้อถอน-ส่งมอบ ${dateNoteMatch[2].trim()})`
+              : ` (${line})`;
+            if (currentSection.items.length > 0) {
+              for (const it of currentSection.items) {
+                if (!it.requirement.includes(line)) {
+                  it.requirement += scheduleNote;
+                }
+              }
+            } else {
+              currentSection.descLines.push(line);
+            }
+          } else if (currentItem) {
+            currentItem.requirement += ' ' + line;
+            // Re-evaluate item properties with full multi-line requirement text
+            const updated = this.buildParsedTorItem(
+              currentSection.section_number,
+              currentSection.title,
+              currentItem.item_number,
+              currentItem.requirement,
+              installmentMap,
+              defaultInstallmentTitle
+            );
+            Object.assign(currentItem, updated);
+          } else {
+            currentSection.descLines.push(line);
+          }
+        }
+      }
+
+      flushSectionIfEmpty(currentSection);
+    }
+
+    // Fallback for 2-level documents (where 1. งาน..., 2. งาน... are the work sections directly)
+    if (rawItems.length === 0) {
+      let currentSection: { section_number: string; title: string; items: ParsedTorItem[] } | null = null;
+      let currentItem: ParsedTorItem | null = null;
+      let skipCurrentChapter = false;
+
+      const sectionRegex2Level = /^(?:หมวดที่|ส่วนที่|ข้อที่)?\s*(\d+)(?!\.\d)[\.\s]+(.+)$/;
+
+      for (const line of lines) {
+        if (/^(ชื่อโครงการ|รหัสโครงการ|สัญญาเลขที่|เลขที่\s*TOR|หน่วยงานเจ้าของโครงการ|ผู้ว่าจ้าง|ผู้รับจ้าง|ผู้จัดการโครงการ|วันเริ่มสัญญา|วันสิ้นสุดสัญญา|สถานที่ดำเนินงาน)\s*[:：]/.test(line)) {
+          continue;
+        }
+
+        if (adminChapterRegex.test(line)) {
+          skipCurrentChapter = true;
+          currentSection = null;
+          currentItem = null;
+          continue;
+        }
+
+        const secMatch = line.match(sectionRegex2Level);
+        if (secMatch && !line.includes('×') && !line.includes('เมตร')) {
+          skipCurrentChapter = false;
+          currentSection = {
+            section_number: secMatch[1],
+            title: secMatch[2].trim(),
             items: []
           };
           sections.push(currentSection);
+          currentItem = null;
+          continue;
         }
 
-        currentSection.items.push(currentItem);
-        rawItems.push(currentItem);
-        continue;
-      }
+        if (skipCurrentChapter) continue;
 
-      // If line is continuation text for the current item requirement
-      if (
-        currentItem &&
-        line.length > 5 &&
-        !/^(หน้าที่|ส่วนที่|เอกสารประกอบ|รายงานผลการดำเนินงาน|ลงนามรับรอง|ขอรับรองว่า|ผู้จัดทำรายงาน|ผู้จัดการโครงการ|ผู้ตรวจสอบงาน|ประธานคณะกรรมการ|\(\.\.\.|วันที่\s*\.\.\.|เจ้าหน้าที|ผู้ควบคุม|ผู้แทนหน่วยงาน)/.test(line) &&
-        !line.includes('(ยังไม่ได้บันทึกภาพ)') &&
-        !line.includes('หน้าสุดท้าย')
-      ) {
-        if (line.startsWith('ข้อกำหนดตาม TOR:')) {
-          currentItem.requirement = line.replace('ข้อกำหนดตาม TOR:', '').trim();
-        } else if (!line.startsWith('ภาพที่ ') && !line.startsWith('[ รอแนบภาพ') && !line.startsWith('ขนาด/มิติ:')) {
+        const itemMatch = line.match(twoLevelRegex);
+        if (itemMatch && !/\.00$/.test(itemMatch[1])) {
+          const itemNum = itemMatch[1];
+          const secNum: string = currentSection ? currentSection.section_number : itemNum.split('.')[0];
+          const secTitle: string = currentSection ? currentSection.title : `หมวดที่ ${secNum}`;
+
+          if (!currentSection) {
+            currentSection = { section_number: secNum, title: secTitle, items: [] };
+            sections.push(currentSection);
+          }
+
+          currentItem = this.buildParsedTorItem(
+            secNum,
+            secTitle,
+            itemNum,
+            itemMatch[2],
+            installmentMap,
+            defaultInstallmentTitle
+          );
+          currentSection.items.push(currentItem);
+          rawItems.push(currentItem);
+        } else if (currentItem && line.length > 5) {
           currentItem.requirement += ' ' + line;
         }
       }
     }
 
-    // If no numbered sections matched, create fallback items from non-metadata lines
-    if (rawItems.length === 0) {
-      const contentLines = lines.filter(l =>
-        l.length > 8 &&
-        !/^(ชื่อโครงการ|รหัสโครงการ|สัญญาเลขที่|เลขที่\s*TOR|หน่วยงาน|ผู้ว่าจ้าง|ผู้รับจ้าง|ผู้จัดการ|วันเริ่ม|วันสิ้นสุด|สถานที่)/.test(l)
-      );
-      const fallbackSec = { section_number: '1', title: 'รายการดำเนินงานและส่งมอบตาม TOR', items: [] as ParsedTorItem[] };
-      const sourceLines = contentLines.length > 0 ? contentLines.slice(0, 8) : [
-        'สำรวจพื้นที่และจัดทำผังการดำเนินงาน',
-        'จัดเตรียมวัสดุอุปกรณ์และติดตั้งโครงสร้างหลัก',
-        'ทดสอบระบบและความเรียบร้อยก่อนส่งมอบงาน'
-      ];
-      sourceLines.forEach((l, idx) => {
-        const item: ParsedTorItem = {
-          section_number: '1',
-          section_title: 'รายการดำเนินงานและส่งมอบตาม TOR',
-          item_number: `1.${idx + 1}`,
-          title: l.length > 50 ? l.substring(0, 47) + '...' : l,
-          requirement: l,
-          quantity: 1,
-          unit: 'งาน',
-          evidence_required: true,
-          minimum_images: 4,
-          capture_instructions: ['ถ่ายภาพรวม', 'ถ่ายรายละเอียด', 'ถ่ายยืนยันผลงาน'],
-          capture_types: ['overview', 'detail', 'finished_work']
-        };
-        fallbackSec.items.push(item);
-        rawItems.push(item);
-      });
-      sections.push(fallbackSec);
-    }
+    // Remove any empty sections
+    const nonEmptySections = sections
+      .filter(s => s.items.length > 0)
+      .map(s => ({
+        section_number: s.section_number,
+        title: s.title,
+        items: s.items
+      }));
 
     return {
       projectMetadata: metadata,
       projectName: metadata.name,
       contractNumber: metadata.contract_number,
-      sections,
+      sections: nonEmptySections,
       rawItems
     };
   }
@@ -737,7 +1024,7 @@ Respond ONLY with a valid JSON object matching this schema:
     const combinedNotes = `${imageCaption || ''} ${annotationText || ''}`.toLowerCase();
     const req = requirementText.toLowerCase();
 
-    const keywords = ['จอ', 'led', 'เวที', 'แสง', 'เสียง', 'บูธ', 'ป้าย', 'ขนาด', 'เมตร', 'ติดตั้ง', 'สำรวจ'];
+    const keywords = ['จอ', 'led', 'เวที', 'แสง', 'เสียง', 'บูธ', 'คูหา', 'ป้าย', 'ขนาด', 'เมตร', 'ติดตั้ง', 'สำรวจ', 'ปลั๊กไฟ', 'โต๊ะ', 'เก้าอี้', 'วิทยุ'];
     let matches = 0;
     for (const kw of keywords) {
       if (req.includes(kw) && combinedNotes.includes(kw)) {

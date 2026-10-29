@@ -29,6 +29,19 @@ export function initDatabase() {
   const schemaPath = path.join(__dirname, 'schema.sql');
   const schemaSql = fs.readFileSync(schemaPath, 'utf-8');
   db.exec(schemaSql);
+
+  // Auto-migration for installment columns
+  try {
+    db.exec('ALTER TABLE tor_items ADD COLUMN installment_number INTEGER DEFAULT 1;');
+  } catch {
+    // Column already exists
+  }
+  try {
+    db.exec("ALTER TABLE tor_items ADD COLUMN installment_title TEXT DEFAULT 'งวดที่ 1';");
+  } catch {
+    // Column already exists
+  }
+
   console.log('✅ SQLite Database initialized successfully at:', DB_PATH);
 }
 

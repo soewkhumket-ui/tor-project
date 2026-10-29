@@ -4,8 +4,11 @@ Write-Host "====================================================================
 Write-Host " 🚀 กำลังเริ่มต้นระบบ TOR Evidence & Handover Report System..." -ForegroundColor Green
 Write-Host "====================================================================" -ForegroundColor Cyan
 Write-Host ""
+$localIP = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -notlike "*Loopback*" -and $_.IPAddress -notlike "169.254*" } | Select-Object -First 1).IPAddress
+if (-not $localIP) { $localIP = "localhost" }
+
 Write-Host " 💻 ลิงก์บนเครื่องคอมพิวเตอร์: http://localhost:5000" -ForegroundColor Yellow
-Write-Host " 📱 ลิงก์บนมือถือ (Wi-Fi เดียวกัน): http://192.168.1.105:5000" -ForegroundColor Yellow
+Write-Host " 📱 ลิงก์บนมือถือ / วงเครือข่ายเดียวกัน: http://$($localIP):5000" -ForegroundColor Yellow
 Write-Host ""
 Write-Host "====================================================================" -ForegroundColor Cyan
 

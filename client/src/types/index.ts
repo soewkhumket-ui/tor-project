@@ -58,6 +58,8 @@ export interface TorItem {
   minimum_images: number;
   capture_instructions: string[];
   capture_types: string[];
+  installment_number?: number;
+  installment_title?: string;
   is_additional: number;
   sort_order: number;
   status: 'DRAFT' | 'APPROVED';
@@ -103,6 +105,8 @@ export interface EvidenceItem {
   minimum_images: number;
   capture_instructions: string[];
   capture_types: string[];
+  installment_number?: number;
+  installment_title?: string;
   is_additional: number;
   section_title?: string;
   files: EvidenceFile[];

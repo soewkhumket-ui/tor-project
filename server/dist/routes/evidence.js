@@ -5,11 +5,11 @@ import fs from 'node:fs';
 import { v4 as uuidv4 } from 'uuid';
 import QRCode from 'qrcode';
 import { dbQuery } from '../db/index.js';
-import { StorageService } from '../services/storage.js';
+import { StorageService, STORAGE_ROOT } from '../services/storage.js';
 import { getCurrentUser } from './auth.js';
 export const evidenceRouter = Router();
 const upload = multer({
-    dest: path.resolve(process.cwd(), 'storage/temp'),
+    dest: path.join(STORAGE_ROOT, 'temp'),
     limits: { fileSize: 25 * 1024 * 1024 } // 25MB
 });
 // GET all evidence checklist items for a project
@@ -110,7 +110,7 @@ evidenceRouter.get('/evidence/:id', (req, res) => {
 });
 // POST Upload evidence photo (3-tier storage + quality checks)
 evidenceRouter.post('/evidence/:id/upload', upload.single('image'), async (req, res) => {
-    const { id: evidenceItemId } = req.params;
+    const evidenceItemId = String(req.params.id);
     const evItem = dbQuery.get('SELECT * FROM evidence_items WHERE id = ?', [evidenceItemId]);
     if (!evItem)
         return res.status(404).json({ error: 'Evidence item not found' });
@@ -119,7 +119,14 @@ evidenceRouter.post('/evidence/:id/upload', upload.single('image'), async (req, 
     try {
         const user = getCurrentUser();
         const tempPath = req.file.path;
-        const originalName = req.file.originalname;
+        let originalName = req.file.originalname;
+        try {
+            const candidate = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
+            if (!candidate.includes('\uFFFD')) {
+                originalName = candidate;
+            }
+        }
+        catch { }
         // Process image through 3-tier pipeline
         const processed = await StorageService.processEvidenceImage(evItem.project_id, evidenceItemId, tempPath, originalName);
         // Clean up temp upload

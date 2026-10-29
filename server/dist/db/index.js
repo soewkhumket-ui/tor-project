@@ -11,13 +11,33 @@ if (!fs.existsSync(DB_DIR)) {
 }
 const DB_PATH = path.join(DB_DIR, 'tor_evidence.sqlite');
 export const db = new DatabaseSync(DB_PATH);
-// Enable WAL mode and foreign keys for high concurrency and relational safety
-db.exec('PRAGMA journal_mode = WAL;');
+// Flush any existing WAL data into the main .sqlite file and use DELETE journal mode
+// so that tor_evidence.sqlite is always a single, complete, Git-friendly file.
+try {
+    db.exec('PRAGMA wal_checkpoint(TRUNCATE);');
+    db.exec('PRAGMA journal_mode = DELETE;');
+}
+catch {
+    // Ignore if locked briefly
+}
 db.exec('PRAGMA foreign_keys = ON;');
 export function initDatabase() {
     const schemaPath = path.join(__dirname, 'schema.sql');
     const schemaSql = fs.readFileSync(schemaPath, 'utf-8');
     db.exec(schemaSql);
+    // Auto-migration for installment columns
+    try {
+        db.exec('ALTER TABLE tor_items ADD COLUMN installment_number INTEGER DEFAULT 1;');
+    }
+    catch {
+        // Column already exists
+    }
+    try {
+        db.exec("ALTER TABLE tor_items ADD COLUMN installment_title TEXT DEFAULT 'งวดที่ 1';");
+    }
+    catch {
+        // Column already exists
+    }
     console.log('✅ SQLite Database initialized successfully at:', DB_PATH);
 }
 // Database helper utilities for query execution
